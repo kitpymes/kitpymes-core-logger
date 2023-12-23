@@ -1,0 +1,340 @@
+﻿# <img src="https://github.com/kitpymes/template-netcore-logger/raw/master/docs/images/logo.png" height="30px"> Kitpymes.Core.Logger
+
+**Logeo de errores para multiples proveedores**
+
+[![Build Status](https://github.com/kitpymes/template-netcore-logger/workflows/Kitpymes.Core.Logger/badge.svg)](https://github.com/kitpymes/template-netcore-logger/actions)
+[![NuGet Status](https://img.shields.io/nuget/v/Kitpymes.Core.Logger)](https://www.nuget.org/packages/Kitpymes.Core.Logger/)
+[![NuGet Download](https://img.shields.io/nuget/dt/Kitpymes.Core.Logger)](https://www.nuget.org/stats/packages/Kitpymes.Core.Logger?groupby=Version)
+[![License](https://img.shields.io/github/license/kitpymes/template-netcore-logger)](https://github.com/kitpymes/template-netcore-logger/blob/master/docs/LICENSE.txt)
+[![Size Repo](https://img.shields.io/github/repo-size/kitpymes/template-netcore-logger)](https://github.com/kitpymes/template-netcore-logger/)
+[![Last Commit](https://img.shields.io/github/last-commit/kitpymes/template-netcore-logger)](https://github.com/kitpymes/template-netcore-logger/)
+
+## 📋 Requerimientos 
+
+* Visual Studio = 2022
+
+* NET TargetFramework = net8.0
+
+* Net Core SDK = 8.0.x
+
+* C# = 12
+
+* Conocimientos sobre Inyección de Dependencias
+
+## 🔧 Instalación 
+
+_Logger se puede instalar usando el administrador de paquetes Nuget o CLI dotnet._
+
+_Nuget_
+
+```
+Install-Package Kitpymes.Core.Logger
+```
+
+_CLI dotnet_
+
+```
+dotnet add package Kitpymes.Core.Logger
+```
+
+## ⌨️ Código
+
+```cs
+public interface ILoggerService
+{
+    ILogger CreateLogger(string title);
+
+    ILogger CreateLogger<TTitle>();
+}
+```
+
+```cs
+public interface ILogger
+{
+    ILogger Trace(string message);
+
+	ILogger Trace(string message, object data);
+
+	ILogger Debug(string message);
+
+	ILogger Debug(string message, object data);
+
+	ILogger Info(string message);
+
+	ILogger Info(string message, object data);
+
+	ILogger Info(string eventName, string templateMessage, params object[] propertyValues);
+
+	ILogger Error(string message);
+
+	ILogger Error(string message, object data);
+
+	ILogger Error(string eventName, string templateMessage, params object[] propertyValues);
+
+	ILogger Error(Exception exception);
+}
+```
+
+```cs
+public enum LoggerLevel
+{
+    Trace = 0,
+    Debug = 1,
+    Info = 2,
+    Error = 3,
+}
+```
+
+```cs
+public enum LoggerFileInterval
+{
+    Infinite = 0,
+    Year = 1,
+    Month = 2,
+    Day = 3,
+    Hour = 4,
+    Minute = 5,
+}
+```
+
+```js
+{
+    "LoggerSettings": {
+        "Enabled": null, // (bool) Default: false
+        "IsSerilogEnabled": null, // (bool) Default: false
+        "SerilogSettings": {
+            "MinimumLevel": null, // (string) Default: "Info" | Options: 0-Trace, 1-Debug, 2-Info, 3-Warn, 4-Error
+            "Console": {
+                "Enabled": null, // (bool) Default: false
+                "MinimumLevel": null, // (string) Default: "Info" | Options: Trace, Debug, Info, Warn, Error
+                "OutputTemplate": null // (string) Default: "{SourceContext}{NewLine}{Timestamp:HH:mm:ss:ff} [{Level:u3}] {Message:lj}{NewLine}"
+            },
+            "File": {
+                "Enabled": null, // (bool) Default: false
+                "FilePath": null, // (string) Default: "Logs\\.log"
+                "Interval": null, // (string) Default: "Day" | Options: Infinite, Year, Month, Day, Hour, Minute
+                "MinimumLevel": null // (string) Default: "Error" | Options: Trace, Debug, Info, Warn, Error
+            },
+            "Email": {
+                "Enabled": null, // (bool) Default: false
+                "UserName": null, // (string)
+                "Password": null, // (string)
+                "Server": null, // (string)
+                "From": null, // (string)
+                "To": null, // (string)
+                "EnableSsl": null, // (bool) Default: true
+                "Port": null, // (int) Default: 465
+                "Subject": null, // (string) Default: "Log Error"
+				"IsBodyHtml": null, // (bool) Default: false
+                "MinimumLevel": null, // (string) Default: "Error" | Options: Trace, Debug, Info, Warn, Error,
+                "OutputTemplate": null // (string) Default: "SourceContext: {SourceContext} | MachineName: {MachineName} | Process: {Process} | Thread: {Thread} => {NewLine}{Timestamp:yyyy-MM-dd HH:mm:ss.fff} [{Level:u}] {Message:lj}{NewLine}"
+            }
+        }
+    }
+}
+```
+
+### Para utilizarlo con inyección de dependencia
+
+**Opción 1: configuración desde el appsetings**
+
+```cs
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Logging.ClearProviders();
+
+builder.Services.LoadLogger();
+```
+
+**Opción 2: configuración manual con opciones**
+
+```cs
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Logging.ClearProviders();
+
+builder.Services.LoadLogger(loggers =>
+{
+    loggers.UseSerilog(serilog =>
+    {
+		serilog
+            .AddMinimunLevel(LoggerLevel.Trace)
+			.AddConsole()
+			.AddFile()
+			.AddEmail
+			(
+				userName: "admin@app.com", 
+				password: "password",
+				server: "smtp.gmail.com",
+				from: "admin@app.com",
+				to: "error@app.com"
+			);
+    });
+});
+```
+
+**Opción 3: configuración manual**
+
+```cs
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Logging.ClearProviders();
+
+ builder.Services.LoadLogger(new LoggerSettings
+{
+    Enabled = true,
+    IsSerilogEnabled = true,
+    SerilogSettings = new Kitpymes.Core.Logger.Serilog.SerilogSettings
+    {
+        Console = new Kitpymes.Core.Logger.Serilog.SerilogConsoleSettings
+        {
+            Enabled = true,
+        }
+    }
+});
+```
+
+**Ejemplo**
+
+```cs
+namespace Serilog.Api.Tests.Controllers
+{
+    [ApiController]
+    [Route("[controller]")]
+    public class WeatherForecastController(ILoggerService logger) : ControllerBase
+    {
+        private Kitpymes.Core.Logger.Abstractions.ILogger Logger => logger.CreateLogger<WeatherForecastController>();
+
+        private static readonly string[] Summaries = ["Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"];
+
+        [HttpGet(Name = "GetWeatherForecast")]
+        public IEnumerable<WeatherForecast> Get()
+        {
+            Logger.Info("All Summaries", "Template: {0}\r\n", JsonSerializer.Serialize(Summaries));
+
+            Logger
+                .Trace("Trace Summary 1:", Summaries[0])
+                .Debug("Debug Summary 2:", Summaries[1])
+                .Info("Info Summary 3:", Summaries[2])
+                .Warning("Warning Summary 4:", Summaries[3])
+                .Error("Error Summary 5:", Summaries[4]);
+
+            return Enumerable.Range(1, 5).Select(index => new WeatherForecast
+            {
+                Date = DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
+                TemperatureC = Random.Shared.Next(-20, 55),
+                Summary = Summaries[Random.Shared.Next(Summaries.Length)]
+            })
+            .ToArray();
+        }
+    }
+}
+```
+
+### Para utilizarlo de forma estatica
+
+**Option 1**
+
+```cs
+var configuration = new ConfigurationBuilder().AddJsonFile("appsettings.json").Build();
+var logger = Log.UseSerilog(configuration).CreateLogger<Program>();
+```
+
+**Option 2**
+
+```cs
+var logger = Log.UseSerilog(serilog => 
+{
+	serilog
+		.AddConsole()
+		.AddFile()
+		.AddEmail
+		(
+			userName: "admin@app.com", 
+			password: "password",
+			server: "smtp.gmail.com",
+			from: "admin@app.com",
+			to: "error@app.com"
+		);
+})
+.CreateLogger<Program>();
+```
+**Ejemplo**
+
+```cs
+var logger = Log
+    .UseSerilog(serilog => serilog.AddMinimunLevel(LoggerLevel.Trace).AddConsole(LoggerLevel.Trace).AddFile("Logs/start_host/.log"))
+    .CreateLogger<Program>();
+
+try
+{
+    logger.Trace("Initialize WebApplication...");
+
+    var builder = WebApplication.CreateBuilder(args);
+
+    logger.Debug("ClearProviders Logging...");
+
+    builder.Logging.ClearProviders();
+   
+    logger.Info("Builds the WebApplication...");
+
+    var application = builder.Build();
+
+    logger.Info("Started Host...");
+
+    await application.RunAsync();
+}
+catch (Exception ex)
+{
+    logger.Error(ex);
+}
+```
+
+## 🔩 Resultados
+
+**Resultado en la consola**
+
+![Resultado en la consola](images/screenshot/resultados_consola.png)
+
+
+**Resultado en los archivos**
+
+![Resultado en los archivos](images/screenshot/resultados_archivos.png)
+
+
+## ⚙️ Pruebas Unitarias
+
+_Cada proveedor de logeo de errores tiene su proyecto de test, se ejecutan desde el "Explorador de pruebas"_
+
+![Tests](images/screenshot/pruebas_unitarias.png)
+
+
+## 🛠️ Construido con 
+
+* [NET Core](https://dotnet.microsoft.com/download) - Framework de trabajo
+* [C#](https://docs.microsoft.com/es-es/dotnet/csharp/) - Lenguaje de programación
+* [Inserción de dependencias](https://docs.microsoft.com/es-es/aspnet/core/fundamentals/dependency-injection?view=aspnetcore-3.0) - Patrón de diseño de software
+* [MSTest](https://docs.microsoft.com/es-es/dotnet/core/testing/unit-testing-with-mstest) - Pruebas unitarias
+* [Nuget](https://www.nuget.org/) - Manejador de dependencias
+* [Visual Studio](https://visualstudio.microsoft.com/) - Entorno de programacion
+* [Serilog](https://serilog.net/) - Proveedor de logeo de errores
+
+
+## ✒️ Autores 
+
+* **Sebastian R Ferrari** - *Trabajo Inicial* - [kitpymes](https://kitpymes.com)
+
+
+## 📄 Licencia 
+
+* Este proyecto está bajo la Licencia [LICENSE](LICENSE.txt)
+
+
+## 🎁 Gratitud 
+
+* Este proyecto fue diseñado para compartir, creemos que es la mejor forma de ayudar 📢
+* Cada persona que contribuya sera invitada a tomar una 🍺 
+* Gracias a todos! 🤓
+
+---
+[Kitpymes](https://github.com/kitpymes) 😊
