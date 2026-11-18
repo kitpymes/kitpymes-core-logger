@@ -1,22 +1,29 @@
+# v.2.0.0
+Versión mayor: requiere .NET 10 y Kitpymes.Core.Shared 2.0.0 (la última publicada en NuGet, 1.1.0, era .NET 5).
+
+- Requiere .NET 10 o superior.
+- Usa Kitpymes.Core.Shared 2.0.0 desde NuGet; quien la use debe migrar también Shared (ver sus release notes).
+- El código pasa a github.com/kitpymes/kitpymes-core-logger y los paquetes se publican desde GitHub Actions.
+
 # v.1.1.0
-- Se migra de la versi�n netcoreapp3 a net5 y se actualizan librer�as.
+- Se migra de la versión netcoreapp3 a net5 y se actualizan librerías.
 
 # v.1.0.10
-- Se actualiza la versi�n de la librer�a Kitpymes.Core.Shared.
-- Se corrigen errores de compilaci�n.
+- Se actualiza la versión de la librería Kitpymes.Core.Shared.
+- Se corrigen errores de compilación.
 
 # v.1.0.9
-- Se agrega la referencia a la librer�a Kitpymes.Core.Shared 1.0.4.
+- Se agrega la referencia a la librería Kitpymes.Core.Shared 1.0.4.
 
 # v.1.0.8
-- Se agrega la referencia a la librer�a Kitpymes.Core.Shared 1.0.3.
+- Se agrega la referencia a la librería Kitpymes.Core.Shared 1.0.3.
 
 # v.1.0.7
 - Se organizaron las propiedades comunes.
-- Se agregaron nuevos analizadores de c�digo.
+- Se agregaron nuevos analizadores de código.
 
 # v.1.0.6
-- Se actualizaron librer�as.
+- Se actualizaron librerías.
 
 # v.1.0.5
 - Se agregaron los comentarios al logeo de errores.

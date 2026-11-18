@@ -1,14 +1,14 @@
 ﻿**Logeo de errores para múltiples proveedores**
 
-[![Build Status](https://github.com/kitpymes/template-netcore-logger/workflows/Logger/badge.svg)](https://github.com/kitpymes/template-netcore-logger/actions) [![NuGet Status](https://img.shields.io/nuget/v/Kitpymes.Core.Logger)](https://www.nuget.org/packages/Kitpymes.Core.Logger/) [![NuGet Download](https://img.shields.io/nuget/dt/Kitpymes.Core.Logger)](https://www.nuget.org/stats/packages/Kitpymes.Core.Logger?groupby=Version) [![License](https://img.shields.io/github/license/kitpymes/template-netcore-logger)](https://github.com/kitpymes/template-netcore-logger/blob/master/docs/LICENSE.txt) [![Size Repo](https://img.shields.io/github/repo-size/kitpymes/template-netcore-logger)](https://github.com/kitpymes/template-netcore-logger/) [![Last Commit](https://img.shields.io/github/last-commit/kitpymes/template-netcore-logger)](https://github.com/kitpymes/template-netcore-logger/) 
+[![Build Status](https://github.com/kitpymes/kitpymes-core-logger/actions/workflows/ci.yml/badge.svg)](https://github.com/kitpymes/kitpymes-core-logger/actions/workflows/ci.yml) [![NuGet Status](https://img.shields.io/nuget/v/Kitpymes.Core.Logger)](https://www.nuget.org/packages/Kitpymes.Core.Logger/) [![NuGet Download](https://img.shields.io/nuget/dt/Kitpymes.Core.Logger)](https://www.nuget.org/stats/packages/Kitpymes.Core.Logger?groupby=Version) [![License](https://img.shields.io/github/license/kitpymes/kitpymes-core-logger)](https://github.com/kitpymes/kitpymes-core-logger/blob/master/docs/LICENSE.txt) [![Size Repo](https://img.shields.io/github/repo-size/kitpymes/kitpymes-core-logger)](https://github.com/kitpymes/kitpymes-core-logger/) [![Last Commit](https://img.shields.io/github/last-commit/kitpymes/kitpymes-core-logger)](https://github.com/kitpymes/kitpymes-core-logger/) 
 
 ## 📋 Requerimientos 
 
-* Visual Studio = 2022
+* Visual Studio 2026 o superior
 
-* NET TargetFramework = net8.0
+* NET TargetFramework = net10.0
 
-* Net Core SDK = 8.0.x
+* SDK de .NET = 10.0.x
 
 * C# = 12
 
@@ -30,7 +30,7 @@
 
 ## 📄 Licencia 
 
-* Este proyecto está bajo la Licencia [LICENSE](https://raw.githubusercontent.com/kitpymes/template-netcore-logger/master/docs/LICENSE.txt)
+* Este proyecto está bajo la Licencia [LICENSE](https://raw.githubusercontent.com/kitpymes/kitpymes-core-logger/master/docs/LICENSE.txt)
 
 
 ## 🎁 Gratitud 
