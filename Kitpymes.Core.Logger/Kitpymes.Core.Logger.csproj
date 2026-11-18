@@ -3,12 +3,6 @@
   <Import Project="$(SolutionDir)docs/props/Common.Build.props" Condition="Exists('$(SolutionDir)docs/props/Common.Build.props')" />
   <Import Project="$(SolutionDir)docs/props/Pack.Build.props" Condition="Exists('$(SolutionDir)docs/props/Pack.Build.props')" />
 
-  <!-- TODO: REEMPLAZAR POR NUGET -->
-  <ItemGroup>
-    <Reference Include="Kitpymes.Core.Shared">
-      <HintPath>..\..\kitpymes-core-shared\Kitpymes.Core.Shared\bin\Debug\net8.0\Kitpymes.Core.Shared.dll</HintPath>
-    </Reference>
-  </ItemGroup>
   
   <ItemGroup>
     <ProjectReference Include="$(SolutionDir)Kitpymes.Core.Logger.Serilog\Kitpymes.Core.Logger.Serilog.csproj" />

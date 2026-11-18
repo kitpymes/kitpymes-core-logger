@@ -1,4 +1,4 @@
-using Kitpymes.Core.Logger;
+锘縰sing Kitpymes.Core.Logger;
 using Kitpymes.Core.Logger.Abstractions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
@@ -28,10 +28,10 @@ try
 
     logger.Info("Add Logger Services...");
 
-    //**Opci髇 1: configuraci髇 desde el appsettings**//
+    //**Opci贸n 1: configuraci贸n desde el appsettings**//
     builder.Services.LoadLogger();
 
-    //**Opci髇 2: configuraci髇 manual con opciones**//
+    //**Opci贸n 2: configuraci贸n manual con opciones**//
     /*
         builder.Services.LoadLogger(loggers =>
         {
@@ -64,7 +64,7 @@ try
         });
     */
 
-    //**Opci髇 3: configuraci髇 manual**//
+    //**Opci贸n 3: configuraci贸n manual**//
     /*
     builder.Services.LoadLogger(new LoggerSettings
     {
