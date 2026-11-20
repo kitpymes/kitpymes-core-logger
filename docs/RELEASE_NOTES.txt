@@ -1,9 +1,28 @@
 # v.2.0.0
-Versión mayor: requiere .NET 10 y Kitpymes.Core.Shared 2.0.0 (la última publicada en NuGet, 1.1.0, era .NET 5).
+Versión mayor: rompe a quien venga de la 1.1.0 (la última publicada en NuGet, .NET 5). Abajo, qué cambia y cómo migrar.
 
 - Requiere .NET 10 o superior.
-- Usa Kitpymes.Core.Shared 2.0.0 desde NuGet; quien la use debe migrar también Shared (ver sus release notes).
+- Usa Kitpymes.Core.Shared 2.0.1; quien la use debe migrar también Shared (ver sus release notes).
 - El código pasa a github.com/kitpymes/kitpymes-core-logger y los paquetes se publican desde GitHub Actions.
+
+## Cambios incompatibles y cómo migrar desde 1.1.0
+
+1. Hay que activar el logger expresamente
+   - Antes bastaba con tener la sección SerilogSettings. Ahora LoggerSettings tiene Enabled e IsSerilogEnabled, y los dos son false por defecto: sin ellos no se registra ningún logger y no da error.
+   - En appsettings.json: "LoggerSettings": { "Enabled": true, "IsSerilogEnabled": true, "SerilogSettings": { ... } }.
+
+2. Carga desde la configuración
+   - Antes: services.LoadLogger(Configuration).
+   - Ahora: services.LoadLogger(), que lee la sección LoggerSettings de la IConfiguration registrada. También existe LoadLogger(LoggerSettings).
+
+3. LoggerOptions
+   - Se quitan IsSerilogEnabled y SerilogOptions; ahora tiene LoggerSettings.
+
+4. Registro del servicio
+   - LoadSerilog registraba ILoggerService como singleton; ahora como transient (una instancia por cada vez que se pide).
+
+5. Nuevo
+   - Métodos Warning en el logger y nivel mínimo general (MinimumLevel en SerilogSettings, AddMinimunLevel en SerilogOptions).
 
 # v.1.1.0
 - Se migra de la versión netcoreapp3 a net5 y se actualizan librerías.
