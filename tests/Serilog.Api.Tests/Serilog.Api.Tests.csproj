@@ -8,9 +8,9 @@
   </PropertyGroup>
   
   <ItemGroup>
-    <ProjectReference Include="$(SolutionDir)Kitpymes.Core.Logger.Abstractions\Kitpymes.Core.Logger.Abstractions.csproj" />
-    <ProjectReference Include="$(SolutionDir)Kitpymes.Core.Logger.Serilog\Kitpymes.Core.Logger.Serilog.csproj" />
-    <ProjectReference Include="$(SolutionDir)Kitpymes.Core.Logger\Kitpymes.Core.Logger.csproj" />
+    <ProjectReference Include="$(KitpymesRoot)Kitpymes.Core.Logger.Abstractions\Kitpymes.Core.Logger.Abstractions.csproj" />
+    <ProjectReference Include="$(KitpymesRoot)Kitpymes.Core.Logger.Serilog\Kitpymes.Core.Logger.Serilog.csproj" />
+    <ProjectReference Include="$(KitpymesRoot)Kitpymes.Core.Logger\Kitpymes.Core.Logger.csproj" />
   </ItemGroup>
 
   <ItemGroup>

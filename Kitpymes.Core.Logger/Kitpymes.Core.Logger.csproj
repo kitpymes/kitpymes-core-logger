@@ -1,11 +1,11 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <Import Project="$(SolutionDir)docs/props/Common.Build.props" Condition="Exists('$(SolutionDir)docs/props/Common.Build.props')" />
-  <Import Project="$(SolutionDir)docs/props/Pack.Build.props" Condition="Exists('$(SolutionDir)docs/props/Pack.Build.props')" />
+  <Import Project="$(KitpymesRoot)docs/props/Common.Build.props" Condition="Exists('$(KitpymesRoot)docs/props/Common.Build.props')" />
+  <Import Project="$(KitpymesRoot)docs/props/Pack.Build.props" Condition="Exists('$(KitpymesRoot)docs/props/Pack.Build.props')" />
 
   
   <ItemGroup>
-    <ProjectReference Include="$(SolutionDir)Kitpymes.Core.Logger.Serilog\Kitpymes.Core.Logger.Serilog.csproj" />
+    <ProjectReference Include="$(KitpymesRoot)Kitpymes.Core.Logger.Serilog\Kitpymes.Core.Logger.Serilog.csproj" />
   </ItemGroup>
 
   <ItemGroup>
