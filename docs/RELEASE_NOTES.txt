@@ -1,10 +1,12 @@
-# v.2.0.1
+# v.2.1.0
+Versión menor y no parche: corrige vulnerabilidades sin cambiar la API pública, pero cambia el comportamiento del log por email (abajo).
 Corrección de seguridad: las dependencias de Kitpymes.Core.Logger.Serilog traían paquetes con vulnerabilidades conocidas, que heredaba quien instalaba Logger.
 - Alta: Microsoft.Data.SqlClient 5.0.1 (GHSA-98g6-xh36-x2p7) y Azure.Identity 1.6.0 (GHSA-5mfx-4wcx-rv27), que llegaban por Serilog.Sinks.MSSqlServer. Se fijan Microsoft.Data.SqlClient 5.2.2 y Azure.Identity 1.18.0.
 - Moderada: Azure.Identity (GHSA-wvxc-855f-jvrv, GHSA-m5vv-6r4h-3vj9), System.IdentityModel.Tokens.Jwt y Microsoft.IdentityModel.JsonWebTokens 6.21.0 (GHSA-59j7-ghrg-fj52), MailKit 2.6.0 (GHSA-9j88-vvj5-vhgr) y MimeKit 2.6.0 (GHSA-g7hc-96xr-gvvx).
 - Alta, nueva con MimeKit 4: System.Security.Cryptography.Pkcs 10.0.0 (GHSA-846f-f764-76mx; moderada: GHSA-2fmv-rv2c-59x7). Se fija la 10.0.13.
 - Serilog.Sinks.Email pasa de 2.4.0 a 4.2.1, que usa MailKit 4.16.0. No se podía fijar MailKit 4 con el sink 2.4.0: este llama a una firma de SmtpClient.SendAsync que ya no existe y el envío fallaría en ejecución.
 - CAMBIO DE COMPORTAMIENTO (la API pública de Logger no cambia): el log por email se configura igual (SerilogEmailSettings) y agrupa igual (hasta 100 eventos o 30 segundos). Con EnableSsl false, la conexión usa STARTTLS si el servidor lo admite, como antes. Dentro del paquete cambian versiones mayores de dependencias: Serilog pasa a 4.3.1 o superior y MailKit a 4.x. Quien fijara Serilog 3.x o MailKit 2.x en su proyecto verá un error de restauración (NU1605) y tiene que subirlos.
+- CAMBIO DE COMPORTAMIENTO: si falla el envío (servidor caído, credenciales), la 2.4.0 descartaba el lote y lo escribía en SelfLog; con la 4.2.1 el lote de Serilog 4 se reintenta más tarde. Si el correo llega a enviarse pero falla la desconexión, puede llegar repetido.
 
 # v.2.0.0
 Versión mayor: rompe a quien venga de la 1.1.0 (la última publicada en NuGet, .NET 5). Abajo, qué cambia y cómo migrar.
