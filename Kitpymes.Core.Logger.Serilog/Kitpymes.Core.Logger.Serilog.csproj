@@ -16,8 +16,14 @@
     <PackageReference Include="Serilog.Sinks.Console" Version="5.0.1" />
     <PackageReference Include="Serilog.Sinks.File" Version="5.0.0" />
     <PackageReference Include="Serilog.Sinks.Async" Version="1.5.0" />
-    <PackageReference Include="Serilog.Sinks.Email" Version="2.4.0" />
+    <PackageReference Include="Serilog.Sinks.Email" Version="4.2.1" />
     <PackageReference Include="Serilog.Sinks.MSSqlServer" Version="6.5.0" />
+    <!-- Serilog.Sinks.MSSqlServer 6.5.0 trae Microsoft.Data.SqlClient 5.0.1 y, con él, Azure.Identity 1.6.0 y
+         System.IdentityModel.Tokens.Jwt 6.21.0, con vulnerabilidades conocidas (GHSA-98g6-xh36-x2p7, GHSA-5mfx-4wcx-rv27,
+         GHSA-wvxc-855f-jvrv, GHSA-m5vv-6r4h-3vj9, GHSA-59j7-ghrg-fj52). Se fijan versiones corregidas: llegan también
+         a quien instala el paquete. -->
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
+    <PackageReference Include="Azure.Identity" Version="1.18.0" />
   </ItemGroup>
 
 </Project>

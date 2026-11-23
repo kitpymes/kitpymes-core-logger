@@ -10,12 +10,16 @@ namespace Kitpymes.Core.Logger.Serilog;
 using System;
 using System.Collections.ObjectModel;
 using System.Data;
+using System.Linq;
 using System.Net;
 using global::Serilog;
+using global::Serilog.Configuration;
 using global::Serilog.Context;
 using global::Serilog.Debugging;
+using global::Serilog.Formatting.Display;
 using global::Serilog.Sinks.MSSqlServer;
 using Kitpymes.Core.Shared.Extensions;
+using MailKit.Security;
 using Seri = global::Serilog;
 
 /*
@@ -107,22 +111,34 @@ public static class SerilogExtensions
             settings.From.ToThrowIfNullOrEmpty();
             settings.To.ToThrowIfNullOrEmpty();
 
+            // Serilog.Sinks.Email 4.x: mismo comportamiento que la 2.4.0 que se usaba hasta Logger 2.0.0.
+            // EnableSsl equivale al useSsl de MailKit (true: SSL al conectar; false: STARTTLS si el servidor lo admite),
+            // y los correos se agrupan igual: hasta 100 eventos o 30 segundos, sin enviar el primero al momento.
+            var options = new Seri.Sinks.Email.EmailSinkOptions
+            {
+                From = settings.From,
+                To = settings.To.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList(),
+                Host = settings.Server,
+                Port = settings.Port!.Value,
+                ConnectionSecurity = settings.EnableSsl!.Value ? SecureSocketOptions.SslOnConnect : SecureSocketOptions.StartTlsWhenAvailable,
+                Credentials = new NetworkCredential(settings.UserName, settings.Password),
+                Body = new MessageTemplateTextFormatter(settings.OutputTemplate ?? SerilogEmailSettings.DefaultOutputTemplate),
+            };
+
+            if (!string.IsNullOrEmpty(settings.Subject))
+            {
+                options.Subject = new MessageTemplateTextFormatter(settings.Subject);
+            }
+
             loggerConfiguration.ToThrowIfNullOrEmpty(nameof(loggerConfiguration)).WriteTo.Email(
-                new Seri.Sinks.Email.EmailConnectionInfo
+                options,
+                new BatchingOptions
                 {
-                    NetworkCredentials = new NetworkCredential
-                    {
-                        UserName = settings.UserName,
-                        Password = settings.Password,
-                    },
-                    MailServer = settings.Server,
-                    Port = settings.Port!.Value,
-                    EnableSsl = settings.EnableSsl!.Value,
-                    FromEmail = settings.From,
-                    ToEmail = settings.To,
-                    EmailSubject = settings.Subject,
+                    BatchSizeLimit = 100,
+                    BufferingTimeLimit = TimeSpan.FromSeconds(30),
+                    EagerlyEmitFirstEvent = false,
+                    QueueLimit = 10000,
                 },
-                outputTemplate: settings.OutputTemplate,
                 restrictedToMinimumLevel: settings.MinimumLevel.ToMinimumLevel());
         }
 
