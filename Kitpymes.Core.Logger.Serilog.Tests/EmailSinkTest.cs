@@ -127,6 +127,23 @@ namespace Kitpymes.Core.Logger.Serilog.Tests
             CollectionAssert.DoesNotContain(smtp.Comandos(), "STARTTLS");
         }
 
+        [TestMethod]
+        [Timeout(120000)]
+        public void AddEmail_Passing_SinSslYServidorConStartTls_Returns_PideStartTls()
+        {
+            using var smtp = new SmtpFalso(responder: true, ofrecerStartTls: true);
+
+            var logger = new global::Serilog.LoggerConfiguration().AddEmail(Settings(port: smtp.Port, enableSsl: false)).CreateLogger();
+
+            logger.Error("Prueba");
+            logger.Dispose();
+
+            Assert.IsTrue(smtp.Terminado.Wait(30000), "El sink no se conectó al servidor.");
+
+            // Sin EnableSsl, como el useSsl false de MailKit: STARTTLS si el servidor lo ofrece (no conexión en claro sin más).
+            CollectionAssert.Contains(smtp.Comandos(), "STARTTLS", string.Join(" | ", smtp.Comandos()));
+        }
+
         private static SerilogEmailSettings Settings(int port, bool enableSsl) => new()
         {
             Enabled = true,
@@ -147,11 +164,13 @@ namespace Kitpymes.Core.Logger.Serilog.Tests
             private readonly TcpListener listener;
             private readonly Thread hilo;
             private readonly bool responder;
+            private readonly bool ofrecerStartTls;
             private readonly List<string> comandos = new();
 
-            public SmtpFalso(bool responder)
+            public SmtpFalso(bool responder, bool ofrecerStartTls = false)
             {
                 this.responder = responder;
+                this.ofrecerStartTls = ofrecerStartTls;
                 listener = new TcpListener(IPAddress.Loopback, 0);
                 listener.Start();
                 Port = ((IPEndPoint)listener.LocalEndpoint).Port;
@@ -216,7 +235,13 @@ namespace Kitpymes.Core.Logger.Serilog.Tests
 
                         if (comando.StartsWith("EHLO", StringComparison.Ordinal))
                         {
-                            escritor.Write("250-localhost\r\n250 AUTH PLAIN\r\n");
+                            escritor.Write(ofrecerStartTls ? "250-localhost\r\n250-STARTTLS\r\n250 AUTH PLAIN\r\n" : "250-localhost\r\n250 AUTH PLAIN\r\n");
+                        }
+                        else if (comando == "STARTTLS")
+                        {
+                            // Basta con saber que lo pidió: sin certificado no se negocia TLS, y el cliente corta.
+                            escritor.WriteLine("220 2.0.0 Preparado");
+                            break;
                         }
                         else if (comando.StartsWith("AUTH", StringComparison.Ordinal))
                         {
