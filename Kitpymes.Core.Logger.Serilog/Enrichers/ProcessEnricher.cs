@@ -27,7 +27,7 @@ public class ProcessEnricher : ILogEventEnricher
     /// </summary>
     public const string ProcessPropertyName = "Process";
 
-    private readonly LogEventProperty property = new(ProcessPropertyName, new ScalarValue(CurrentProcess()));
+    private readonly LogEventProperty property = new LogEventProperty(ProcessPropertyName, new ScalarValue(CurrentProcess()));
 
     /// <summary>
     /// Enriquecer el evento de registro.
