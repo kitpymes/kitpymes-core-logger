@@ -52,9 +52,10 @@ namespace Kitpymes.Core.Logger.Serilog
         /// <remarks>
         /// <para>Actúa sobre la categoría de <c>ILogger&lt;T&gt;</c>, que es el nombre completo del tipo; el <c>ILoggerService</c> antiguo no tiene categoría.</para>
         /// <para>Si no se indican, <c>Microsoft</c> y <c>System</c> quedan en <c>Warning</c> (<see cref="KitpymesSerilog.DefaultMinimumLevelOverride"/>).</para>
+        /// <para>Un nivel que no existe (p. ej. "Warnig") lanza <see cref="System.ArgumentException"/> al crear el logger: no baja el nivel sin avisar.</para>
         /// </remarks>
 #pragma warning disable CA2227 // Se rellena desde la configuración (appsettings).
-        public Dictionary<string, string>? MinimumLevelOverride { get; set; }
+        public IDictionary<string, string>? MinimumLevelOverride { get; set; }
 #pragma warning restore CA2227
 
         /// <summary>

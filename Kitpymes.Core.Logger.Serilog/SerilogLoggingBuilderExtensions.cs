@@ -8,6 +8,7 @@
 namespace Kitpymes.Core.Logger.Serilog;
 
 using System;
+using System.Linq;
 using global::Serilog.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -26,6 +27,7 @@ public static class SerilogLoggingBuilderExtensions
     /// <remarks>
     /// <para>El logger de Serilog se crea al pedir el primer <c>ILogger</c> y lo libera el contenedor (vacía los eventos pendientes).</para>
     /// <para>Serilog decide el nivel (<c>MinimumLevel</c> y <c>MinimumLevelOverride</c>): las reglas <c>Logging:LogLevel</c> no lo filtran.</para>
+    /// <para>Se registra una sola vez: una segunda llamada (también desde <c>AddKitpymesLogging</c>) no hace nada.</para>
     /// <para>No quita los demás proveedores: si la aplicación tiene el de consola de Microsoft y aquí también se activa
     /// la consola, cada evento sale dos veces. Para dejar sólo Serilog, <c>builder.ClearProviders()</c> antes.</para>
     /// </remarks>
@@ -35,8 +37,18 @@ public static class SerilogLoggingBuilderExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(settings);
 
-        builder.Services.AddSingleton<ILoggerProvider>(_ => new SerilogLoggerProvider(KitpymesSerilog.CreateLogger(settings), dispose: true));
-        builder.AddFilter<SerilogLoggerProvider>(null, LogLevel.Trace);
+        // Una sola vez: llamarlo dos veces (o con AddKitpymesLogging) escribiría cada evento dos veces.
+        if (builder.Services.Any(descriptor => descriptor.ServiceType == typeof(KitpymesSerilogRegistration)))
+        {
+            return builder;
+        }
+
+        builder.Services.AddSingleton<KitpymesSerilogRegistration>();
+        builder.Services.AddSingleton<ILoggerProvider>(_ =>
+            new SensitiveScopeLoggerProvider(new SerilogLoggerProvider(KitpymesSerilog.CreateLogger(settings), dispose: true)));
+
+        // Como AddSerilog: el nivel lo decide Serilog, no las reglas de Microsoft.Extensions.Logging.
+        builder.AddFilter<SensitiveScopeLoggerProvider>(null, LogLevel.Trace);
 
         return builder;
     }
@@ -56,5 +68,12 @@ public static class SerilogLoggingBuilderExtensions
         options(serilogOptions);
 
         return builder.AddKitpymesSerilog(serilogOptions.SerilogSettings);
+    }
+
+    /// <summary>
+    /// Marca de que Serilog ya está registrado en el contenedor.
+    /// </summary>
+    private sealed class KitpymesSerilogRegistration
+    {
     }
 }

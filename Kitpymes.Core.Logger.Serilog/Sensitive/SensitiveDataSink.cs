@@ -18,12 +18,25 @@ using global::Serilog.Parsing;
 /// <remarks>
 /// Falla cerrado: si ocultar los datos lanza, no se escribe el evento original, sino uno que dice que se descartó.
 /// </remarks>
-/// <param name="inner">Sinks reales (un logger de Serilog con los sinks configurados).</param>
-/// <param name="mask">Función que oculta los datos; por defecto <see cref="SensitiveDataMasker.Mask(LogEvent)"/> (los tests la sustituyen para probar el fallo).</param>
-internal sealed class SensitiveDataSink(ILogEventSink inner, Func<LogEvent, LogEvent>? mask = null) : ILogEventSink, IDisposable
+internal sealed class SensitiveDataSink : ILogEventSink, IDisposable
 {
     private static readonly MessageTemplate Discarded = new MessageTemplateParser()
         .Parse("Evento descartado: no se pudieron ocultar los datos sensibles ({MaskingError}).");
+
+    private readonly ILogEventSink inner;
+
+    private readonly Func<LogEvent, LogEvent>? mask;
+
+    /// <summary>
+    /// Inicializa una nueva instancia de la clase <see cref="SensitiveDataSink"/>.
+    /// </summary>
+    /// <param name="inner">Sinks reales (un logger de Serilog con los sinks configurados).</param>
+    /// <param name="mask">Función que oculta los datos; por defecto <see cref="SensitiveDataMasker.Mask(LogEvent)"/> (los tests la sustituyen para probar el fallo).</param>
+    public SensitiveDataSink(ILogEventSink inner, Func<LogEvent, LogEvent>? mask = null)
+    {
+        this.inner = inner;
+        this.mask = mask;
+    }
 
     /// <summary>
     /// Escribe el evento sin datos sensibles.
@@ -36,7 +49,7 @@ internal sealed class SensitiveDataSink(ILogEventSink inner, Func<LogEvent, LogE
 #pragma warning disable CA1031 // Falla cerrado: cualquier error al ocultar descarta el evento original.
         try
         {
-            masked = mask is null ? SensitiveDataMasker.Mask(logEvent) : mask(logEvent);
+            masked = this.mask is null ? SensitiveDataMasker.Mask(logEvent) : this.mask(logEvent);
         }
         catch (Exception exception)
         {
@@ -49,11 +62,11 @@ internal sealed class SensitiveDataSink(ILogEventSink inner, Func<LogEvent, LogE
         }
 #pragma warning restore CA1031
 
-        inner.Emit(masked);
+        this.inner.Emit(masked);
     }
 
     /// <summary>
     /// Libera los sinks reales.
     /// </summary>
-    public void Dispose() => (inner as IDisposable)?.Dispose();
+    public void Dispose() => (this.inner as IDisposable)?.Dispose();
 }

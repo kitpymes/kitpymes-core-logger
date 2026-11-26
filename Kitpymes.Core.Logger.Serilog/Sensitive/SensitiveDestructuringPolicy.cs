@@ -52,15 +52,15 @@ internal sealed class SensitiveDestructuringPolicy : IDestructuringPolicy
             .Where(p => p.CanRead && p.GetIndexParameters().Length == 0)
             .ToArray();
 
-        var sensitive = properties.Any(p => p.IsDefined(typeof(SensitiveAttribute), true))
-            || type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance).Any(f => f.IsDefined(typeof(SensitiveAttribute), true));
+        var sensitive = properties.Any(p => Attribute.IsDefined(p, typeof(SensitiveAttribute), true))
+            || type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance).Any(f => Attribute.IsDefined(f, typeof(SensitiveAttribute), true));
 
         return sensitive ? properties : null;
     }
 
     private static LogEventPropertyValue Value(PropertyInfo property, object value, ILogEventPropertyValueFactory factory)
     {
-        if (property.IsDefined(typeof(SensitiveAttribute), true) || HasSensitiveBackingField(property))
+        if (Attribute.IsDefined(property, typeof(SensitiveAttribute), true) || HasSensitiveBackingField(property))
         {
             return new ScalarValue(SensitiveDataNames.Mask);
         }

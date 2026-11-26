@@ -216,7 +216,81 @@ namespace Kitpymes.Core.Logger.Serilog.Tests
                 .AddKitpymesLogging((LoggerSettings?)null)
                 .AddKitpymesLogging(new LoggerSettings { Enabled = true, IsSerilogEnabled = true }));
 
-            Assert.AreEqual(2, services.Count(d => d.ServiceType == typeof(ILoggerProvider)));
+            // Serilog se registra una sola vez aunque se pida dos.
+            Assert.AreEqual(1, services.Count(d => d.ServiceType == typeof(ILoggerProvider)));
+        }
+
+        [TestMethod]
+        public void AddKitpymesSerilog_DosVeces_EscribeCadaEventoUnaVez()
+        {
+            var services = new ServiceCollection();
+            services.AddLogging(builder => builder.AddKitpymesSerilog(ConFichero()).AddKitpymesSerilog(ConFichero()).AddKitpymesLogging(new LoggerSettings { Enabled = true, IsSerilogEnabled = true }));
+
+            using (var provider = services.BuildServiceProvider())
+            {
+                provider.GetRequiredService<ILogger<LoggingBuilderTest>>().LogError("una vez");
+            }
+
+            Assert.AreEqual(1, LeerEventos().Count);
+        }
+
+        [TestMethod]
+        public void BeginScope_NoEscribeElSecretoDelScope()
+        {
+            var services = new ServiceCollection();
+            services.AddLogging(builder => builder.AddKitpymesSerilog(ConFichero()));
+
+            using (var provider = services.BuildServiceProvider())
+            {
+                var logger = provider.GetRequiredService<ILogger<LoggingBuilderTest>>();
+                using (logger.BeginScope("Usuario {UserName} con {Pwd:D} y {Otro}", "ana", Secreto, 5))
+                using (logger.BeginScope(new Dictionary<string, object> { ["Token"] = Secreto, ["Pedido"] = 7 }))
+                using (logger.BeginScope("token=" + Secreto))
+                {
+                    logger.LogInformation("Dentro del scope");
+                }
+            }
+
+            var texto = LeerTexto();
+            var evento = LeerEventos().Single();
+            Assert.IsFalse(texto.Contains(Secreto, StringComparison.Ordinal), texto);
+            Assert.AreEqual("ana", evento.GetProperty("UserName").GetString());
+            Assert.AreEqual(7, evento.GetProperty("Pedido").GetInt32());
+            StringAssert.Contains(texto, "Usuario ana con *** y 5");
+        }
+
+        [TestMethod]
+        public void MinimumLevelOverride_NivelQueNoExiste_Lanza()
+        {
+            var settings = ConFichero();
+            settings.MinimumLevelOverride = new Dictionary<string, string> { ["Microsoft"] = "Warnig" };
+
+            var error = Assert.ThrowsExactly<ArgumentException>(() => KitpymesSerilog.CreateLogger(settings));
+
+            StringAssert.Contains(error.Message, "Warnig");
+            Assert.IsFalse(Directory.Exists(directorio));
+        }
+
+        [TestMethod]
+        public void DefaultMinimumLevelOverride_NoSePuedeCambiar()
+        {
+            Assert.IsFalse(KitpymesSerilog.DefaultMinimumLevelOverride is IDictionary<string, string> { IsReadOnly: false });
+            Assert.AreEqual("Warning", KitpymesSerilog.DefaultMinimumLevelOverride["Microsoft"]);
+            Assert.AreEqual("Warning", KitpymesSerilog.DefaultMinimumLevelOverride["System"]);
+            Assert.AreEqual(2, KitpymesSerilog.DefaultMinimumLevelOverride.Count);
+        }
+
+        [TestMethod]
+        public void SensitiveHeredado_EnUnaPropiedadSobrescrita_SeOculta()
+        {
+            using (var factory = KitpymesSerilog.CreateLoggerFactory(ConFichero()))
+            {
+                factory.CreateLogger("Herencia").LogInformation("Cliente {@Cliente}", new ClienteDerivado { Dni = Secreto, Nombre = "Ana" });
+            }
+
+            var texto = LeerTexto();
+            Assert.IsFalse(texto.Contains(Secreto, StringComparison.Ordinal), texto);
+            StringAssert.Contains(texto, "\"Nombre\":\"Ana\"");
         }
 
         [TestMethod]
@@ -272,6 +346,19 @@ namespace Kitpymes.Core.Logger.Serilog.Tests
             .ToList();
 
         private sealed record Credenciales(string UserName, string Password);
+
+        private class ClienteBase
+        {
+            [Sensitive]
+            public virtual string Dni { get; set; } = string.Empty;
+
+            public string Nombre { get; set; } = string.Empty;
+        }
+
+        private sealed class ClienteDerivado : ClienteBase
+        {
+            public override string Dni { get; set; } = string.Empty;
+        }
 
         private sealed class Cliente
         {
