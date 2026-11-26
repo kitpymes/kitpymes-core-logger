@@ -1,3 +1,29 @@
+# v.2.2.0
+Versión menor: corrige el ciclo de vida del logger de Serilog sin cambiar la API pública (sólo añade IDisposable a SerilogProvider). Cambia el comportamiento (abajo).
+
+Corrige:
+- CreateLogger creaba un logger de Serilog nuevo en cada llamada (con su hilo del sink Async y sus lotes de email y SQL Server) y no lo liberaba nunca. Ahora cada SerilogProvider tiene un único logger de Serilog, que se crea con el primer CreateLogger.
+- CreateLogger devolvía siempre la misma instancia, que se quedaba con el último título: dos loggers creados del mismo servicio escribían con el mismo título. Ahora cada CreateLogger devuelve un logger nuevo con su título.
+- Cada llamada esperaba 50 ms (1 segundo en Error) y llamaba a Log.CloseAndFlush de Serilog, que cierra el logger estático de Serilog y no el creado: bloqueaba el hilo y no vaciaba nada. Ya no espera.
+- El nivel "Warn" (LoggerLevel.Warn) se trataba como Info: con MinimumLevel "Warn" se escribían también los Info. Ahora "Warn" y "Warning" son Warning.
+- AddDefaultSettings dejaba el título en el LogContext de Serilog del hilo (PushProperty sin liberar), y lo recogían otros loggers con FromLogContext. Ahora el título va en el propio logger.
+- TitleEnricher sólo ponía el título en el primer evento.
+- Error(Exception) y Error(mensaje, Exception) metían la excepción dentro del mensaje, como texto: {Exception} de las plantillas de consola y email salía vacío. Ahora va como excepción del evento.
+- MachineNameEnricher, ProcessEnricher y ThreadEnricher sólo añadían su propiedad al primer evento con ese valor. Ahora la añaden a todos; el nombre de la máquina y el proceso se calculan una vez.
+- Con SQL Server activo, un fallo de la base de datos lanzaba la excepción al código que escribía el log (el sink iba como auditoría, AuditTo). Ahora va como sink normal (WriteTo): un fallo no llega al que llama y se escribe en el SelfLog de Serilog.
+- AddDefaultSettings sustituía el SelfLog de Serilog que hubiera configurado la aplicación (y en Release no escribía nada). Ya no lo toca.
+- LoggerOptions.UseSerilog no activaba LoggerSettings.Enabled: LoadLogger(o => o.UseSerilog(...)) no registraba nada. Ahora lo activa.
+- LoadLogger() construía un contenedor aparte para leer la IConfiguration; ahora toma la registrada como instancia y sólo si no la hay construye uno, como antes.
+
+CAMBIOS DE COMPORTAMIENTO:
+- LoadSerilog registra ILoggerService como singleton (como en la 1.x; en la 2.0.0 pasó a transient) y devuelve esa misma instancia, sin crear un contenedor aparte. Si ya había un ILoggerService registrado, no registra otro.
+- Los eventos que los sinks aún no han escrito (fichero asíncrono, lotes de email y SQL Server) se escriben al llamar a SerilogProvider.Dispose() o al terminar el proceso. Quien use Log.UseSerilog en el arranque puede liberar lo que devuelve: (logger as IDisposable)?.Dispose().
+- new SerilogProvider(null) lanza ArgumentNullException al crearlo (antes, NullReferenceException en CreateLogger).
+- El sink de SQL Server pasa a escribir por lotes (100 eventos o 10 segundos, la configuración que ya tenía y que como auditoría no se usaba) y un evento pendiente se escribe al liberar. Sin probar contra una base de datos real.
+- Los niveles (MinimumLevel) no distinguen mayúsculas y aceptan también Verbose e Information.
+- Los eventos llevan siempre MachineName, Process y Thread; la columna MachineName de SQL Server ya no queda vacía.
+- La plantilla de Error(Exception) pasa de "Exception => {Exception}" a "Exception => {ExceptionMessage}", y la de Error(mensaje, Exception) es sólo el mensaje.
+
 # v.2.1.0
 Versión menor y no parche: corrige vulnerabilidades sin cambiar la API pública, pero cambia el comportamiento del log por email (abajo).
 Corrección de seguridad: las dependencias de Kitpymes.Core.Logger.Serilog traían paquetes con vulnerabilidades conocidas, que heredaba quien instalaba Logger.
