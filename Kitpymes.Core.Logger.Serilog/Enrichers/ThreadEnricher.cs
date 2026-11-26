@@ -10,7 +10,6 @@ namespace Kitpymes.Core.Logger.Serilog;
 using System.Threading;
 using global::Serilog.Core;
 using global::Serilog.Events;
-using Kitpymes.Core.Shared.Extensions;
 
 /*
     Clase para enriquecer el logeo de errores ThreadEnricher
@@ -37,17 +36,9 @@ public class ThreadEnricher : ILogEventEnricher
     {
         var thread = Thread.CurrentThread;
 
-        string threadValue = string.Empty;
+        var id = thread.ManagedThreadId.ToString(System.Globalization.CultureInfo.CurrentCulture);
 
-        if (thread?.ManagedThreadId > 0)
-        {
-            threadValue = thread.ManagedThreadId.ToStringFormat();
-        }
-
-        if (!string.IsNullOrWhiteSpace(thread?.Name))
-        {
-            threadValue += thread?.ManagedThreadId > 0 ? $" - {thread.Name}" : thread?.Name;
-        }
+        var threadValue = string.IsNullOrWhiteSpace(thread.Name) ? id : $"{id} - {thread.Name}";
 
         logEvent?.AddPropertyIfAbsent(new LogEventProperty(ThreadPropertyName, new ScalarValue(threadValue)));
     }

@@ -16,7 +16,6 @@ using global::Serilog;
 using global::Serilog.Configuration;
 using global::Serilog.Formatting.Display;
 using global::Serilog.Sinks.MSSqlServer;
-using Kitpymes.Core.Shared.Extensions;
 using MailKit.Security;
 using Seri = global::Serilog;
 
@@ -42,7 +41,7 @@ public static class SerilogExtensions
     /// <returns>La clase LoggerConfiguration.</returns>
     public static LoggerConfiguration AddDefaultSettings(this LoggerConfiguration loggerConfiguration, string title)
     {
-        return loggerConfiguration.ToThrowIfNullOrEmpty()
+        return Guard.NotNull(loggerConfiguration)
             .Enrich.WithTitle(title)
             .Enrich.WithMachineName()
             .Enrich.WithProcess()
@@ -60,9 +59,9 @@ public static class SerilogExtensions
     {
         if (settings?.Enabled == true)
         {
-            loggerConfiguration.ToThrowIfNullOrEmpty().WriteTo.Console(
+            Guard.NotNull(loggerConfiguration).WriteTo.Console(
                 theme: Seri.Sinks.SystemConsole.Themes.SystemConsoleTheme.Colored,
-                outputTemplate: settings.OutputTemplate.ToThrowIfNullOrEmpty(),
+                outputTemplate: Guard.NotNullOrWhiteSpace(settings.OutputTemplate),
                 restrictedToMinimumLevel: settings.MinimumLevel.ToMinimumLevel());
         }
 
@@ -79,9 +78,9 @@ public static class SerilogExtensions
     {
         if (settings?.Enabled == true)
         {
-            loggerConfiguration.ToThrowIfNullOrEmpty().WriteTo.Async(x => x.File(
+            Guard.NotNull(loggerConfiguration).WriteTo.Async(x => x.File(
                 formatter: new Seri.Formatting.Compact.CompactJsonFormatter(),
-                path: settings.FilePath.ToThrowIfNullOrEmpty(),
+                path: Guard.NotNullOrWhiteSpace(settings.FilePath),
                 restrictedToMinimumLevel: settings.MinimumLevel.ToMinimumLevel(),
                 rollingInterval: settings.Interval.ToRollingInterval(),
                 shared: true));
@@ -100,11 +99,11 @@ public static class SerilogExtensions
     {
         if (settings?.Enabled == true)
         {
-            settings.UserName.ToThrowIfNullOrEmpty();
-            settings.Password.ToThrowIfNullOrEmpty();
-            settings.Server.ToThrowIfNullOrEmpty();
-            settings.From.ToThrowIfNullOrEmpty();
-            settings.To.ToThrowIfNullOrEmpty();
+            Guard.NotNullOrWhiteSpace(settings.UserName);
+            Guard.NotNullOrWhiteSpace(settings.Password);
+            Guard.NotNullOrWhiteSpace(settings.Server);
+            Guard.NotNullOrWhiteSpace(settings.From);
+            Guard.NotNullOrWhiteSpace(settings.To);
 
             // Serilog.Sinks.Email 4.x: mismo comportamiento que la 2.4.0 que se usaba hasta Logger 2.0.0.
             // EnableSsl equivale al useSsl de MailKit (true: SSL al conectar; false: STARTTLS si el servidor lo admite),
@@ -125,7 +124,7 @@ public static class SerilogExtensions
                 options.Subject = new MessageTemplateTextFormatter(settings.Subject);
             }
 
-            loggerConfiguration.ToThrowIfNullOrEmpty(nameof(loggerConfiguration)).WriteTo.Email(
+            Guard.NotNull(loggerConfiguration).WriteTo.Email(
                 options,
                 new BatchingOptions
                 {
@@ -150,7 +149,7 @@ public static class SerilogExtensions
     {
         if (settings?.Enabled == true)
         {
-            settings.ConnectionString.ToThrowIfNullOrEmpty();
+            Guard.NotNullOrWhiteSpace(settings.ConnectionString);
 
             var columnOptions = new ColumnOptions
             {
@@ -173,7 +172,7 @@ public static class SerilogExtensions
             columnOptions.TimeStamp.NonClusteredIndex = true;
             columnOptions.TimeStamp.AllowNull = true;
 
-            loggerConfiguration.ToThrowIfNullOrEmpty().WriteTo.MSSqlServer(
+            Guard.NotNull(loggerConfiguration).WriteTo.MSSqlServer(
                 sinkOptions: new MSSqlServerSinkOptions
                 {
                     SchemaName = settings.SchemaName,

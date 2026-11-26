@@ -92,13 +92,15 @@ namespace Kitpymes.Core.Logger.Serilog.Tests
         }
 
         [TestMethod]
-        public void LoggerServiceAntiguo_TambienOcultaLosDatosSensibles()
+        public void JsonComoPlantilla_TambienSeOculta()
         {
-            // El patrón del core (RequestDataBehaviour): el JSON de la petición va como plantilla.
-            var service = new SerilogProvider(ConFichero());
-
-            service.CreateLogger("Login").Info("LoginUserRequest", "{\"UserName\":\"u\",\"Password\":\"" + Secreto + "\"}");
-            service.Dispose();
+            // El patrón del core (RequestDataBehaviour): el JSON de la petición va como texto del mensaje.
+            using (var factory = KitpymesSerilog.CreateLoggerFactory(ConFichero()))
+            {
+#pragma warning disable CA2254 // Es justo el caso que se prueba: una plantilla que no es fija.
+                factory.CreateLogger("Login").LogInformation("LoginUserRequest => {\"UserName\":\"u\",\"Password\":\"" + Secreto + "\"}");
+#pragma warning restore CA2254
+            }
 
             var texto = LeerTexto();
             Assert.AreEqual(1, LeerEventos().Count);
