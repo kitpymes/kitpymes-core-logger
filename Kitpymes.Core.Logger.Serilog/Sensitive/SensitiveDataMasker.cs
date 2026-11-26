@@ -118,6 +118,24 @@ internal static class SensitiveDataMasker
         }
     }
 
+    /// <summary>
+    /// Indica si el texto acaba en una clave sensible seguida de = o : (lo que venga detrás es un secreto).
+    /// </summary>
+    /// <param name="text">Texto.</param>
+    /// <returns><c>true</c> si acaba en una clave sensible (también si no se pudo revisar a tiempo).</returns>
+    internal static bool EndsWithSensitiveKey(string text)
+    {
+        try
+        {
+            var match = KeyAtEnd.Match(text);
+            return match.Success && SensitiveDataNames.IsSensitive(match.Groups["key"].Value);
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return true;
+        }
+    }
+
     private static MaskedTemplate MaskTemplate(MessageTemplate template)
     {
         if (Templates.TryGetValue(template.Text, out var cached))
@@ -167,24 +185,6 @@ internal static class SensitiveDataMasker
         }
 
         return new MaskedTemplate(changed ? Parser.Parse(text.ToString()) : template, maskedProperties);
-    }
-
-    /// <summary>
-    /// Indica si el texto acaba en una clave sensible seguida de = o : (lo que venga detrás es un secreto).
-    /// </summary>
-    /// <param name="text">Texto.</param>
-    /// <returns><c>true</c> si acaba en una clave sensible (también si no se pudo revisar a tiempo).</returns>
-    internal static bool EndsWithSensitiveKey(string text)
-    {
-        try
-        {
-            var match = KeyAtEnd.Match(text);
-            return match.Success && SensitiveDataNames.IsSensitive(match.Groups["key"].Value);
-        }
-        catch (RegexMatchTimeoutException)
-        {
-            return true;
-        }
     }
 
     private static string MaskQuoted(string text)
@@ -454,8 +454,8 @@ internal static class SensitiveDataMasker
                 return string.Equals(masked, text, StringComparison.Ordinal) ? value : new ScalarValue(masked);
 
             // Uri y otros escalares que no son de valor: se revisa su texto (una Uri con contraseña o ?token=).
-            case ScalarValue { Value: { } other } when other is not ValueType:
-                var otherText = other.ToString() ?? string.Empty;
+            case ScalarValue scalar when scalar.Value is not null and not ValueType:
+                var otherText = scalar.Value.ToString() ?? string.Empty;
                 var maskedOther = MaskText(otherText);
                 return string.Equals(maskedOther, otherText, StringComparison.Ordinal) ? value : new ScalarValue(maskedOther);
 
@@ -491,7 +491,27 @@ internal static class SensitiveDataMasker
     /// <summary>
     /// Plantilla con el texto revisado y los huecos que van detrás de una clave sensible.
     /// </summary>
-    /// <param name="Template">Plantilla (la misma si no ha cambiado).</param>
-    /// <param name="MaskedProperties">Propiedades que se ocultan por ir detrás de una clave sensible.</param>
-    private sealed record MaskedTemplate(MessageTemplate Template, HashSet<string> MaskedProperties);
+    private sealed class MaskedTemplate
+    {
+        /// <summary>
+        /// Inicializa una nueva instancia de la clase <see cref="MaskedTemplate"/>.
+        /// </summary>
+        /// <param name="template">Plantilla (la misma si no ha cambiado).</param>
+        /// <param name="maskedProperties">Propiedades que se ocultan por ir detrás de una clave sensible.</param>
+        public MaskedTemplate(MessageTemplate template, HashSet<string> maskedProperties)
+        {
+            this.Template = template;
+            this.MaskedProperties = maskedProperties;
+        }
+
+        /// <summary>
+        /// Obtiene la plantilla.
+        /// </summary>
+        public MessageTemplate Template { get; }
+
+        /// <summary>
+        /// Obtiene las propiedades que se ocultan por ir detrás de una clave sensible.
+        /// </summary>
+        public HashSet<string> MaskedProperties { get; }
+    }
 }
