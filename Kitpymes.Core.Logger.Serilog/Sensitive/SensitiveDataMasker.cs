@@ -449,7 +449,7 @@ internal static class SensitiveDataMasker
     {
         switch (value)
         {
-            case ScalarValue { Value: string text }:
+            case ScalarValue scalarText when scalarText.Value is string text:
                 var masked = MaskText(text);
                 return string.Equals(masked, text, StringComparison.Ordinal) ? value : new ScalarValue(masked);
 
