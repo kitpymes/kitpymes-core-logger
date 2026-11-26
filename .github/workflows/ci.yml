@@ -107,6 +107,17 @@ jobs:
           echo "Cobertura de líneas: $pct %"
           echo "### Cobertura de líneas: $pct %" >> "$GITHUB_STEP_SUMMARY"
 
+      # Cobertura mínima de cada librería (90 %), uniendo los informes. La comprobación se prueba antes contra
+      # informes falsos: por debajo, sin líneas de la librería o sin informes tiene que fallar (copiado del mapper).
+      - name: Probar la comprobación de la cobertura
+        run: bash .github/scripts/test-check-cobertura.sh
+
+      - name: Cobertura (mínimo 90 % por librería)
+        run: |
+          for p in $(git ls-files 'Kitpymes.*.csproj' | grep -v Tests); do
+            python3 .github/scripts/check-cobertura.py 90 "$(basename "$p" .csproj)" $(find cobertura -name coverage.cobertura.xml) || exit 1
+          done
+
       # Empaqueta igual que el job publish, para ver en la rama que la publicación no fallará al empaquetar.
       # Tiene que salir un .nupkg por cada librería.
       - name: Empaquetar como en la publicación
@@ -155,11 +166,74 @@ jobs:
           fi
           echo "Caso malo: sin validación de paquete no hay semáforo."
 
-  # En cada rama, tests de mutación con Stryker.NET: mide si los tests detectan fallos metidos
+  # Lo que recibe quien instala los paquetes: ni ASP.NET Core ni Kitpymes.Core.Shared (desde la 3.0.0). Se mira el
+  # nuspec de cada paquete y el project.assets.json de un proyecto nuevo que sólo instala Kitpymes.Core.Logger.
+  # El chequeo se prueba contra ficheros falsos y contra un paquete real que lo tiene que hacer fallar (copiado del mapper).
+  pack-check:
+    if: github.ref != 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Probar el chequeo de dependencias
+        run: bash .github/scripts/test-check-dependencias.sh
+
+      - name: Empaquetar (sin publicar)
+        run: |
+          for p in $(git ls-files 'Kitpymes.*.csproj' | grep -v Tests); do
+            dotnet pack "$p" -c Release -o artifacts
+          done
+
+      - name: Comprobar los paquetes y lo que recibe quien los usa
+        run: |
+          chk="$GITHUB_WORKSPACE/.github/scripts/check-dependencias.sh"
+          for n in artifacts/*.nupkg; do
+            unzip -p "$n" '*.nuspec' > "$n.nuspec"
+            bash "$chk" nuspec "$n.nuspec" || { cat "$n.nuspec"; exit 1; }
+          done
+          ver=$(ls artifacts | grep -oP '^Kitpymes\.Core\.Logger\.\K[0-9][^/]*(?=\.nupkg$)')
+          test -n "$ver" || { echo "::error::No se ha podido leer la versión del paquete."; exit 1; }
+          # Caché propia y mapeo de orígenes: los paquetes de Logger sólo pueden venir de los recién empaquetados.
+          mkdir -p /tmp/consumidor && cd /tmp/consumidor
+          export NUGET_PACKAGES=/tmp/consumidor/packages
+          dotnet new classlib -f net10.0 -o . --force > /dev/null
+          cat > nuget.config <<XML
+          <configuration>
+            <packageSources>
+              <clear />
+              <add key="local" value="$GITHUB_WORKSPACE/artifacts" />
+              <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+            </packageSources>
+            <packageSourceMapping>
+              <packageSource key="local"><package pattern="Kitpymes.Core.Logger*" /></packageSource>
+              <packageSource key="nuget.org"><package pattern="*" /></packageSource>
+            </packageSourceMapping>
+          </configuration>
+          XML
+          dotnet add package Kitpymes.Core.Logger --version "$ver"
+          bash "$chk" assets obj/project.assets.json "Kitpymes.Core.Logger/$ver" "Kitpymes.Core.Logger.Serilog/$ver" "Kitpymes.Core.Logger.Abstractions/$ver" "Serilog.Extensions.Logging/10.0.0"
+
+      # Caso malo con un paquete real: Kitpymes.Core.Results 1.1.1 lleva ASP.NET Core y Shared. El chequeo
+      # del consumidor TIENE que fallar con él; si no, no sirve.
+      - name: El chequeo del consumidor detecta un paquete real con ASP.NET Core
+        run: |
+          set -o pipefail
+          mkdir -p /tmp/consumidor-malo && cd /tmp/consumidor-malo
+          export NUGET_PACKAGES=/tmp/consumidor-malo/packages
+          dotnet new classlib -f net10.0 -o . --force > /dev/null
+          dotnet add package Kitpymes.Core.Results --version 1.1.1
+          if bash "$GITHUB_WORKSPACE/.github/scripts/check-dependencias.sh" assets obj/project.assets.json "Kitpymes.Core.Results/1.1.1" | sed 's/::error:://'; then
+            echo "::error::El chequeo no detecta ASP.NET Core ni Shared en Kitpymes.Core.Results 1.1.1: no sirve."; exit 1
+          fi
+          echo "Detectado, como se esperaba."
 
   # En cada rama, tests de mutación con Stryker.NET: mide si los tests detectan fallos metidos
   # a propósito. Un mutante que sobrevive es un test que falta. La puntuación sale en el resumen.
-  # Se muta cada proyecto que tiene su proyecto de tests al lado (Kitpymes.X -> Kitpymes.X.Tests).
+  # Para la pipeline por debajo del 80 %, con --break-at y además sobre el informe (probado contra informes falsos).
   mutation:
     if: github.ref != 'refs/heads/master'
     runs-on: ubuntu-latest
@@ -173,13 +247,20 @@ jobs:
       - name: Instalar Stryker.NET
         run: dotnet tool install -g dotnet-stryker --version 5.1.0
 
+      - name: Probar la comprobación del umbral de mutación
+        run: bash .github/scripts/test-check-mutacion.sh
+
+      # Las tres librerías se prueban desde el mismo proyecto de tests: se muta cada una con él.
       - name: Mutación
+        working-directory: Kitpymes.Core.Logger.Serilog.Tests
         run: |
-          for t in $(git ls-files 'Kitpymes.*.Tests/*.Tests.csproj'); do
-            src=$(basename "$t" .Tests.csproj)
-            [ -f "$src/$src.csproj" ] || continue
-            (cd "$(dirname "$t")" && dotnet stryker --project "$src.csproj" --reporter markdown --reporter json --reporter progress --output "../mutacion/$src") || exit 1
+          for p in $(cd .. && git ls-files 'Kitpymes.*.csproj' | grep -v Tests); do
+            src=$(basename "$p" .csproj)
+            dotnet stryker --project "$src.csproj" --test-project Kitpymes.Core.Logger.Serilog.Tests.csproj --reporter markdown --reporter json --reporter progress --break-at 80 --output "../mutacion/$src" || exit 1
           done
+
+      - name: Umbral de mutación (80 %)
+        run: python3 .github/scripts/check-mutacion.py 80 $(find mutacion -name mutation-report.json)
 
       - name: Resumen
         if: always()
