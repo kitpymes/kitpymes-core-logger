@@ -1,3 +1,68 @@
+# v.3.0.0
+Versión mayor: quita la API propia de logging (obsoleta desde la 2.3.0 con los avisos KPY0009, KPY0010 y KPY0011) y deja Logger sobre ILogger<T> de Microsoft.Extensions.Logging, con Serilog como adaptador. Ya no depende de Kitpymes.Core.Shared ni de ASP.NET Core.
+
+Antes de subir: compilar con la 2.3.0 y quitar todos los avisos KPY0009, KPY0010 y KPY0011 con los sustitutos de abajo. Después, mirar lo que "cambia sin dar error" en los puntos 1 a 3, y los puntos 4 y 5.
+
+## Guía de migración desde la 2.3.0
+
+1. ILoggerService e ILogger de Kitpymes (KPY0009) → ILogger<T> de Microsoft.Extensions.Logging
+   Antes:
+     public class LoginHandler(ILoggerService loggerService)
+     {
+         var logger = loggerService.CreateLogger<LoginHandler>();
+         logger.Info("Entra {UserName}", ...);           // o Info(eventName, plantilla, valores)
+         logger.Warning("La transacción tardó {Ms} ms", ms);
+         logger.Error(exception);
+     }
+   Después:
+     public class LoginHandler(ILogger<LoginHandler> logger)
+     {
+         logger.LogInformation("Entra {UserName}", userName);
+         logger.LogWarning("La transacción tardó {Ms} ms", ms);
+         logger.LogError(exception, "Fallo en el login");
+     }
+   Equivalencias:
+   - Trace/Debug/Info/Warning/Error(mensaje) → LogTrace/LogDebug/LogInformation/LogWarning/LogError(mensaje).
+   - Xxx(mensaje, datos) escribía "mensaje => {Data}" → LogXxx("mensaje {@Data}", datos) (con @ se desestructura y se ocultan sus miembros sensibles).
+   - Info/Error(eventName, plantilla, valores) escribía "{EventName} => plantilla" → LogInformation/LogError("{EventName} => " + plantilla, [eventName, ..valores]), o mejor un EventId: LogInformation(new EventId(1, eventName), plantilla, valores).
+   - Error(excepción) → LogError(excepción, "mensaje"); Error(mensaje, excepción) → LogError(excepción, mensaje).
+   - Las llamadas encadenadas (logger.Info(...).Info(...)) no existen: una llamada por línea.
+   Lo que cambia sin dar error:
+   - {Title}: antes era typeof(T).Name; ahora el nombre corto de la categoría. Es igual salvo en genéricos: antes "RequestDataBehaviour`2", ahora "RequestDataBehaviour". La categoría completa va en la propiedad SourceContext.
+   - El nivel lo decide Serilog: MinimumLevel de SerilogSettings y MinimumLevelOverride (Microsoft y System en Warning si no se dice otra cosa); Logging:LogLevel de appsettings no lo filtra.
+
+2. Log.UseSerilog (KPY0010) → KitpymesSerilog.CreateLoggerFactory
+   Antes:
+     var logger = Log.UseSerilog(o => o.AddConsole().AddFile("Logs/start_host/.log")).CreateLogger<Program>();
+     logger.Info("Arranca...");
+   Después:
+     using var arranque = KitpymesSerilog.CreateLoggerFactory(o => o.AddConsole().AddFile("Logs/start_host/.log"));
+     var logger = arranque.CreateLogger<Program>();
+     logger.LogInformation("Arranca...");
+   Lo que cambia sin dar error: hay que liberar la fábrica (using). La 2.x vaciaba los eventos pendientes al terminar el proceso; la 3.0.0 no, y sin liberarla se pierden los que el fichero asíncrono, el email o SQL Server no hayan escrito.
+
+3. services.LoadLogger y services.LoadSerilog (KPY0011) → builder.Logging.AddKitpymesLogging / AddKitpymesSerilog
+   Antes:                                     Después:
+     services.LoadLogger();                     builder.Logging.AddKitpymesLogging(builder.Configuration);
+     services.LoadLogger(o => o.UseSerilog(s)); builder.Logging.AddKitpymesLogging(o => o.UseSerilog(s));
+     services.LoadLogger(settings);             builder.Logging.AddKitpymesLogging(settings);
+     services.LoadSerilog(serilogSettings);     builder.Logging.AddKitpymesSerilog(serilogSettings);
+   Sin host: services.AddLogging(b => b.AddKitpymesLogging(configuration)).
+   La sección de appsettings (LoggerSettings con Enabled, IsSerilogEnabled y SerilogSettings) no cambia.
+   Lo que cambia sin dar error:
+   - LoadLogger() buscaba la IConfiguration en el contenedor; AddKitpymesLogging la recibe (la raíz, no la sección).
+   - No se quitan los demás proveedores: con la consola de Microsoft activa, cada evento sale dos veces. builder.Logging.ClearProviders() antes, para dejar sólo Serilog.
+
+4. Kitpymes.Core.Shared y ASP.NET Core ya no llegan a través de Logger
+   - Quien use Kitpymes.Core.Shared o tipos de ASP.NET Core (Microsoft.AspNetCore.App) sin referenciarlos tiene que añadirlos a su proyecto: PackageReference de Kitpymes.Core.Shared o FrameworkReference Microsoft.AspNetCore.App (en un proyecto web ya viene con el SDK Web).
+   - Logger trae Serilog.Extensions.Logging 10.0.0 y Microsoft.Extensions.Configuration.Binder 10.0.0.
+
+5. Excepciones de argumentos
+   - Las extensiones de LoggerConfiguration (AddConsole, AddFile, AddEmail, AddSqlserver, WithTitle…) lanzaban la excepción de Kitpymes.Core.Shared con un argumento nulo o un texto vacío (por ejemplo UserName vacío en el email). Ahora lanzan ArgumentNullException (nulo) o ArgumentException (vacío o sólo espacios). Quien capturara la excepción de Shared tiene que capturar ArgumentException.
+
+Se quitan: ILogger e ILoggerService (Kitpymes.Core.Logger.Abstractions), SerilogProvider y SerilogServiceCollectionExtensions (Kitpymes.Core.Logger.Serilog), Log y LoggerServiceCollectionExtensions (Kitpymes.Core.Logger).
+Se quedan sin cambios: SerilogSettings y sus secciones, SerilogOptions, LoggerSettings, LoggerOptions, LoggerLevel, LoggerFileInterval, las extensiones de LoggerConfiguration y los enriquecedores, SensitiveAttribute, SensitiveDataNames, AddKitpymesLogging, AddKitpymesSerilog y KitpymesSerilog.
+
 # v.2.3.0
 Versión menor: añade la API nueva (ILogger<T> de Microsoft.Extensions.Logging con Serilog), oculta los datos sensibles y marca obsoleto lo que la 3.0.0 quita. No quita nada. Cambia el comportamiento (abajo).
 

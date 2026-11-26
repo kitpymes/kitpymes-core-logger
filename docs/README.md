@@ -39,277 +39,87 @@ dotnet add package Kitpymes.Core.Logger
 
 ## ⌨️ Código
 
-### Desde la 2.3.0: `ILogger<T>` de Microsoft con Serilog
+### Registro con appsettings.json
 
 ```csharp
-// Program.cs: arranque (antes de tener el contenedor)
-using var arranque = KitpymesSerilog.CreateLoggerFactory(o => o.AddConsole());
-var log = arranque.CreateLogger<Program>();
+var builder = WebApplication.CreateBuilder(args);
 
-// Registro: lee la sección LoggerSettings de appsettings.json, como LoadLogger
-builder.Logging.ClearProviders(); // opcional: sólo Serilog
-builder.Logging.AddKitpymesLogging(builder.Configuration);
+builder.Logging.ClearProviders(); // opcional: sólo Serilog (si no, la consola de Microsoft repite cada evento)
+builder.Logging.AddKitpymesLogging(builder.Configuration); // lee la sección LoggerSettings
+```
 
-// Uso: ILogger<T> de Microsoft.Extensions.Logging, con plantillas (no interpolar)
-public class Servicio(ILogger<Servicio> logger)
-{
-    public void Hacer(int id) => logger.LogInformation("Pedido {Id}", id);
+```json
+"LoggerSettings": {
+  "Enabled": true,
+  "IsSerilogEnabled": true,
+  "SerilogSettings": {
+    "MinimumLevel": "Info",                         // Trace, Debug, Info, Warn, Error, Fatal
+    "MinimumLevelOverride": { "Microsoft": "Warning" }, // por defecto Microsoft y System en Warning
+    "Console": { "Enabled": true },
+    "File": { "Enabled": true, "FilePath": "Logs/.log", "MinimumLevel": "Error", "Interval": "Day" },
+    "Email": { "Enabled": false },
+    "SqlServer": { "Enabled": false }
+  }
 }
 ```
 
-Datos sensibles: antes de llegar a los sinks, se ocultan (`***`) las propiedades, miembros, claves JSON y `clave=valor` con nombre de credencial (password, token, apikey, connectionstring, secret, pin…), lo marcado con `[Sensitive]`, `Bearer` y las contraseñas en URL, también en el texto del mensaje. No cubre datos personales sin `[Sensitive]`, mensajes de excepciones ni texto libre sin clave. `ILoggerService`, `Log` y `LoadLogger`/`LoadSerilog` están obsoletos (KPY0009 a KPY0011) y se quitan en la 3.0.0.
+### Registro con opciones
 
+```csharp
+builder.Logging.AddKitpymesLogging(o => o.UseSerilog(serilog => serilog
+    .AddMinimunLevel(LoggerLevel.Debug)
+    .AddConsole()
+    .AddFile("Logs/.log", LoggerLevel.Error)));
 
-```cs
-public interface ILoggerService
-{
-    ILogger CreateLogger(string title);
-
-    ILogger CreateLogger<TTitle>();
-}
+// O sólo el adaptador de Serilog, con su configuración:
+builder.Logging.AddKitpymesSerilog(new SerilogSettings { Console = new SerilogConsoleSettings { Enabled = true } });
 ```
 
-```cs
-public interface ILogger
+### Uso
+
+```csharp
+public class LoginHandler(ILogger<LoginHandler> logger)
 {
-    ILogger Trace(string message);
-
-	ILogger Trace(string message, object data);
-
-	ILogger Debug(string message);
-
-	ILogger Debug(string message, object data);
-
-	ILogger Info(string message);
-
-	ILogger Info(string message, object data);
-
-	ILogger Info(string eventName, string templateMessage, params object[] propertyValues);
-
-	ILogger Error(string message);
-
-	ILogger Error(string message, object data);
-
-	ILogger Error(string eventName, string templateMessage, params object[] propertyValues);
-
-	ILogger Error(Exception exception);
-}
-```
-
-```cs
-public enum LoggerLevel
-{
-    Trace = 0,
-    Debug = 1,
-    Info = 2,
-    Error = 3,
-}
-```
-
-```cs
-public enum LoggerFileInterval
-{
-    Infinite = 0,
-    Year = 1,
-    Month = 2,
-    Day = 3,
-    Hour = 4,
-    Minute = 5,
-}
-```
-
-```js
-{
-    "LoggerSettings": {
-        "Enabled": null, // (bool) Default: false
-        "IsSerilogEnabled": null, // (bool) Default: false
-        "SerilogSettings": {
-            "MinimumLevel": null, // (string) Default: "Info" | Options: 0-Trace, 1-Debug, 2-Info, 3-Warn, 4-Error
-            "Console": {
-                "Enabled": null, // (bool) Default: false
-                "MinimumLevel": null, // (string) Default: "Info" | Options: Trace, Debug, Info, Warn, Error
-                "OutputTemplate": null // (string) Default: "{SourceContext}{NewLine}{Timestamp:HH:mm:ss:ff} [{Level:u3}] {Message:lj}{NewLine}"
-            },
-            "File": {
-                "Enabled": null, // (bool) Default: false
-                "FilePath": null, // (string) Default: "Logs\\.log"
-                "Interval": null, // (string) Default: "Day" | Options: Infinite, Year, Month, Day, Hour, Minute
-                "MinimumLevel": null // (string) Default: "Error" | Options: Trace, Debug, Info, Warn, Error
-            },
-            "Email": {
-                "Enabled": null, // (bool) Default: false
-                "UserName": null, // (string)
-                "Password": null, // (string)
-                "Server": null, // (string)
-                "From": null, // (string)
-                "To": null, // (string)
-                "EnableSsl": null, // (bool) Default: true
-                "Port": null, // (int) Default: 465
-                "Subject": null, // (string) Default: "Log Error"
-				"IsBodyHtml": null, // (bool) Default: false
-                "MinimumLevel": null, // (string) Default: "Error" | Options: Trace, Debug, Info, Warn, Error,
-                "OutputTemplate": null // (string) Default: "SourceContext: {SourceContext} | MachineName: {MachineName} | Process: {Process} | Thread: {Thread} => {NewLine}{Timestamp:yyyy-MM-dd HH:mm:ss.fff} [{Level:u}] {Message:lj}{NewLine}"
-            }
-        }
+    public void Handle(LoginCommand command)
+    {
+        logger.LogInformation("Login de {UserName}", command.UserName); // plantillas: no interpolar
+        logger.LogInformation("Petición {@Command}", command);           // Password sale como ***
     }
 }
 ```
 
-### Para utilizarlo con inyección de dependencia
+### Arranque (antes de tener el contenedor)
 
-**Opción 1: configuración desde el appsetings**
-
-```cs
-var builder = WebApplication.CreateBuilder(args);
-
-builder.Logging.ClearProviders();
-
-builder.Services.LoadLogger();
-```
-
-**Opción 2: configuración manual con opciones**
-
-```cs
-var builder = WebApplication.CreateBuilder(args);
-
-builder.Logging.ClearProviders();
-
-builder.Services.LoadLogger(loggers =>
-{
-    loggers.UseSerilog(serilog =>
-    {
-		serilog
-            .AddMinimunLevel(LoggerLevel.Trace)
-			.AddConsole()
-			.AddFile()
-			.AddEmail
-			(
-				userName: "admin@app.com", 
-				password: "password",
-				server: "smtp.gmail.com",
-				from: "admin@app.com",
-				to: "error@app.com"
-			);
-    });
-});
-```
-
-**Opción 3: configuración manual**
-
-```cs
-var builder = WebApplication.CreateBuilder(args);
-
-builder.Logging.ClearProviders();
-
- builder.Services.LoadLogger(new LoggerSettings
-{
-    Enabled = true,
-    IsSerilogEnabled = true,
-    SerilogSettings = new Kitpymes.Core.Logger.Serilog.SerilogSettings
-    {
-        Console = new Kitpymes.Core.Logger.Serilog.SerilogConsoleSettings
-        {
-            Enabled = true,
-        }
-    }
-});
-```
-
-**Ejemplo**
-
-```cs
-namespace Serilog.Api.Tests.Controllers
-{
-    [ApiController]
-    [Route("[controller]")]
-    public class WeatherForecastController(ILoggerService logger) : ControllerBase
-    {
-        private Kitpymes.Core.Logger.Abstractions.ILogger Logger => logger.CreateLogger<WeatherForecastController>();
-
-        private static readonly string[] Summaries = ["Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"];
-
-        [HttpGet(Name = "GetWeatherForecast")]
-        public IEnumerable<WeatherForecast> Get()
-        {
-            Logger.Info("All Summaries", "Template: {0}\r\n", JsonSerializer.Serialize(Summaries));
-
-            Logger
-                .Trace("Trace Summary 1:", Summaries[0])
-                .Debug("Debug Summary 2:", Summaries[1])
-                .Info("Info Summary 3:", Summaries[2])
-                .Warning("Warning Summary 4:", Summaries[3])
-                .Error("Error Summary 5:", Summaries[4]);
-
-            return Enumerable.Range(1, 5).Select(index => new WeatherForecast
-            {
-                Date = DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-                TemperatureC = Random.Shared.Next(-20, 55),
-                Summary = Summaries[Random.Shared.Next(Summaries.Length)]
-            })
-            .ToArray();
-        }
-    }
-}
-```
-
-### Para utilizarlo de forma estatica
-
-**Option 1**
-
-```cs
-var configuration = new ConfigurationBuilder().AddJsonFile("appsettings.json").Build();
-var logger = Log.UseSerilog(configuration).CreateLogger<Program>();
-```
-
-**Option 2**
-
-```cs
-var logger = Log.UseSerilog(serilog => 
-{
-	serilog
-		.AddConsole()
-		.AddFile()
-		.AddEmail
-		(
-			userName: "admin@app.com", 
-			password: "password",
-			server: "smtp.gmail.com",
-			from: "admin@app.com",
-			to: "error@app.com"
-		);
-})
-.CreateLogger<Program>();
-```
-**Ejemplo**
-
-```cs
-var logger = Log
-    .UseSerilog(serilog => serilog.AddMinimunLevel(LoggerLevel.Trace).AddConsole(LoggerLevel.Trace).AddFile("Logs/start_host/.log"))
-    .CreateLogger<Program>();
+```csharp
+using var arranque = KitpymesSerilog.CreateLoggerFactory(o => o.AddConsole().AddFile("Logs/start_host/.log"));
+var logger = arranque.CreateLogger<Program>();
 
 try
 {
-    logger.Trace("Initialize WebApplication...");
-
-    var builder = WebApplication.CreateBuilder(args);
-
-    logger.Debug("ClearProviders Logging...");
-
-    builder.Logging.ClearProviders();
-   
-    logger.Info("Builds the WebApplication...");
-
-    var application = builder.Build();
-
-    logger.Info("Started Host...");
-
-    await application.RunAsync();
+    logger.LogInformation("Arranca...");
+    // ...
 }
 catch (Exception ex)
 {
-    logger.Error(ex);
+    logger.LogCritical(ex, "El host no ha podido arrancar");
 }
+// Al liberar la fábrica (using) se escriben los eventos pendientes.
 ```
+
+### Datos sensibles
+
+Antes de llegar a cualquier sink, cada evento pasa por la ocultación (`***`):
+
+- Propiedades y miembros (objetos con `{@X}`, diccionarios, listas) cuyo nombre es de credencial: password, pass, pwd, contraseña, clave, secret, token, apikey, connectionstring, authorization, cookie, pin, otp, cvv, iban, privatekey, credentials… Se compara por palabras: `UserPassword` sí, `CancellationToken` o `Secretaria` no (`SensitiveDataNames.IsSensitive`).
+- Miembros marcados con `[Sensitive]` (al desestructurar, `{@X}`), para datos que no son credenciales (DNI, por ejemplo).
+- En el texto, también el de la plantilla del mensaje: valores de claves JSON, `clave=valor` y `clave: valor` (cadenas de conexión, `ToString()` de un record, parámetros de URL), `Bearer` y contraseñas en URL.
+- Si ocultar falla, se escribe que el evento se descartó, nunca el original.
+
+No cubre: datos personales sin `[Sensitive]`, mensajes de excepciones, objetos con un `ToString()` propio sin forma `clave=valor` ni texto libre sin clave ("la contraseña es x"). Recomendado: CA2254 como error en el proyecto (plantillas fijas).
+
+### Migración desde la 2.x
+
+Guía punto por punto, con ejemplos de antes y después, en las [notas de la 3.0.0](RELEASE_NOTES.txt).
 
 ## 🔩 Resultados
 
