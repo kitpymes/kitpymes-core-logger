@@ -20,7 +20,7 @@ using Kitpymes.Core.Logger.Abstractions;
 /// </summary>
 internal sealed class SensitiveDestructuringPolicy : IDestructuringPolicy
 {
-    private readonly ConcurrentDictionary<Type, PropertyInfo[]?> types = new ConcurrentDictionary<Type, PropertyInfo[]?>();
+    private readonly ConcurrentDictionary<Type, PropertyInfo[]> types = new ConcurrentDictionary<Type, PropertyInfo[]>();
 
     /// <summary>
     /// Desestructura el objeto si su tipo tiene miembros sensibles.
@@ -33,7 +33,8 @@ internal sealed class SensitiveDestructuringPolicy : IDestructuringPolicy
     {
         var properties = this.types.GetOrAdd(value.GetType(), SensitiveProperties);
 
-        if (properties is null)
+        // Sin miembros sensibles, Serilog desestructura como siempre.
+        if (properties.Length == 0)
         {
             result = null!;
             return false;
@@ -46,7 +47,7 @@ internal sealed class SensitiveDestructuringPolicy : IDestructuringPolicy
         return true;
     }
 
-    private static PropertyInfo[]? SensitiveProperties(Type type)
+    private static PropertyInfo[] SensitiveProperties(Type type)
     {
         var properties = type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Where(p => p.CanRead && p.GetIndexParameters().Length == 0)
@@ -55,7 +56,7 @@ internal sealed class SensitiveDestructuringPolicy : IDestructuringPolicy
         var sensitive = properties.Any(p => Attribute.IsDefined(p, typeof(SensitiveAttribute), true))
             || type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance).Any(f => Attribute.IsDefined(f, typeof(SensitiveAttribute), true));
 
-        return sensitive ? properties : null;
+        return sensitive ? properties : Array.Empty<PropertyInfo>();
     }
 
     private static LogEventPropertyValue Value(PropertyInfo property, object value, ILogEventPropertyValueFactory factory)
