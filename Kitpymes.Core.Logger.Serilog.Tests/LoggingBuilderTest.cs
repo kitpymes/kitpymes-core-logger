@@ -97,9 +97,9 @@ namespace Kitpymes.Core.Logger.Serilog.Tests
             // El patrón del core (RequestDataBehaviour): el JSON de la petición va como texto del mensaje.
             using (var factory = KitpymesSerilog.CreateLoggerFactory(ConFichero()))
             {
-#pragma warning disable CA2254 // Es justo el caso que se prueba: una plantilla que no es fija.
+#pragma warning disable CA2254, CA2017 // Es justo el caso que se prueba: una plantilla que no es fija (y sus llaves no son huecos).
                 factory.CreateLogger("Login").LogInformation("LoginUserRequest => {\"UserName\":\"u\",\"Password\":\"" + Secreto + "\"}");
-#pragma warning restore CA2254
+#pragma warning restore CA2254, CA2017
             }
 
             var texto = LeerTexto();
