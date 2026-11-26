@@ -31,6 +31,28 @@ jobs:
       - name: Restaurar
         run: dotnet restore Solution.sln
 
+      # La publicación exige que las notas empiecen exactamente por "# v.<versión>" (sin BOM). Se comprueba en
+      # cada rama, no sólo al publicar: la 2.3.0 se fusionó con un BOM en las notas y master no publicó. Para
+      # demostrar que la comprobación sirve, también se pasa a una copia con BOM, que tiene que fallar.
+      - name: Comprobar las notas de la versión
+        run: |
+          version=$(dotnet msbuild Kitpymes.Core.Logger/Kitpymes.Core.Logger.csproj -getProperty:Version -p:Configuration=Release -p:SolutionDir=$PWD/)
+          comprobar() { [ "$(head -n 1 "$1" | tr -d '\r')" = "# v.$version" ]; }
+          if ! comprobar docs/RELEASE_NOTES.txt; then
+            echo "::error::docs/RELEASE_NOTES.txt tiene que empezar por '# v.$version' (sin BOM). Empieza por: $(head -n 1 docs/RELEASE_NOTES.txt | od -c | head -n 2)"
+            exit 1
+          fi
+          printf '\xef\xbb\xbf' > /tmp/notas-con-bom.txt
+          cat docs/RELEASE_NOTES.txt >> /tmp/notas-con-bom.txt
+          if comprobar /tmp/notas-con-bom.txt; then
+            echo "::error::La comprobación de las notas no detecta un BOM."
+            exit 1
+          fi
+          echo "Notas de la $version correctas; la copia con BOM se rechaza."
+
+      # El analizador de hilos no se ejecutaba (Update en vez de Include) y nadie lo vio: se comprueba en
+      # cada proyecto que no es de tests que el paquete está referenciado y que VSTHRD110 es un error.
+
       # El analizador de hilos no se ejecutaba (Update en vez de Include) y nadie lo vio: se comprueba en
       # cada proyecto que no es de tests que el paquete está referenciado y que VSTHRD110 es un error.
       # Que se ejecuta lo prueba el paso siguiente.
@@ -84,6 +106,56 @@ jobs:
           pct=$(awk -v r="$rate" 'BEGIN { printf "%.1f", r * 100 }')
           echo "Cobertura de líneas: $pct %"
           echo "### Cobertura de líneas: $pct %" >> "$GITHUB_STEP_SUMMARY"
+
+      # Empaqueta igual que el job publish, para ver en la rama que la publicación no fallará al empaquetar.
+      # Tiene que salir un .nupkg por cada librería.
+      - name: Empaquetar como en la publicación
+        run: |
+          n=0
+          for p in $(git ls-files 'Kitpymes.*.csproj' | grep -v Tests); do
+            if ! dotnet pack "$p" -c Release -o artifacts-prueba; then
+              # En una versión mayor, las roturas aceptadas van en <Proyecto>/CompatibilitySuppressions.xml. Si
+              # falta, se genera aquí y se muestra para copiarlo al repo (sólo las que están en las notas).
+              dotnet pack "$p" -c Release -o artifacts-supresiones -p:ApiCompatGenerateSuppressionFile=true > /dev/null || true
+              f="$(dirname "$p")/CompatibilitySuppressions.xml"
+              if [ -f "$f" ]; then echo "----- $f -----"; cat "$f"; echo; echo "-----"; fi
+              echo "::error::No se pudo empaquetar $p."; fallo=1
+            fi
+            n=$((n + 1))
+          done
+          # Se sigue con las demás librerías para sacar todos los ficheros de supresiones de una vez.
+          if [ "${fallo:-0}" -ne 0 ]; then exit 1; fi
+          if [ "$n" -eq 0 ]; then
+            echo "::error::No se ha encontrado ninguna librería que empaquetar."; exit 1
+          fi
+          hechos=$(ls artifacts-prueba/*.nupkg | wc -l)
+          if [ "$hechos" -ne "$n" ]; then
+            echo "::error::Salen $hechos paquetes y hay $n librerías."; exit 1
+          fi
+          ls artifacts-prueba
+          # La validación de paquete no dice nada cuando pasa. Al terminar deja un semáforo en la carpeta
+          # intermedia del proyecto (Microsoft.NET.ApiCompat.ValidatePackage.targets): sin él, no se ha ejecutado.
+          # Que la versión de referencia esté en la caché no basta: se descarga al restaurar, valide o no.
+          base=$(grep -o '<PackageValidationBaselineVersion>[^<]*' docs/props/Pack.Build.props | sed 's/.*>//')
+          if [ -z "$base" ]; then
+            echo "::error::No hay PackageValidationBaselineVersion en docs/props/Pack.Build.props."; exit 1
+          fi
+          semaforo() { find "$1" -name 'Microsoft.NET.ApiCompat.ValidatePackage.semaphore' 2>/dev/null | grep -q .; }
+          for p in $(git ls-files 'Kitpymes.*.csproj' | grep -v Tests); do
+            if ! semaforo "$(dirname "$p")/obj/Release"; then
+              echo "::error::La validación de paquete de $p no se ha ejecutado contra la $base."; exit 1
+            fi
+            echo "Validación de paquete de $p contra la $base: ejecutada."
+          done
+          # Caso malo: empaquetado sin validación, en otra carpeta intermedia, no puede dejar semáforo.
+          p=$(git ls-files 'Kitpymes.*.csproj' | grep -v Tests | head -n 1)
+          dotnet pack "$p" -c Release -o artifacts-sin-validar -p:EnablePackageValidation=false -p:IntermediateOutputPath=obj/sinvalidar/ > /dev/null
+          if semaforo "$(dirname "$p")/obj/sinvalidar"; then
+            echo "::error::La comprobación de la validación de paquete da por buena una validación que no se ha ejecutado."; exit 1
+          fi
+          echo "Caso malo: sin validación de paquete no hay semáforo."
+
+  # En cada rama, tests de mutación con Stryker.NET: mide si los tests detectan fallos metidos
 
   # En cada rama, tests de mutación con Stryker.NET: mide si los tests detectan fallos metidos
   # a propósito. Un mutante que sobrevive es un test que falta. La puntuación sale en el resumen.
@@ -189,7 +261,12 @@ jobs:
 
       - name: Empaquetar
         if: steps.version.outputs.publicar == 'true'
-        run: dotnet pack Solution.sln -c Release -o artifacts
+        # Sólo las librerías, no la solución: con la solución, el proyecto web de pruebas tests/Tests.Api
+        # fallaba con "packaging has been disabled" y no se publicaba nada.
+        run: |
+          for p in $(git ls-files 'Kitpymes.*.csproj' | grep -v Tests); do
+            dotnet pack "$p" -c Release -o artifacts
+          done
 
       - name: Iniciar sesión en NuGet (clave temporal de 1 hora)
         if: steps.version.outputs.publicar == 'true'
