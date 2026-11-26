@@ -8,10 +8,10 @@
 namespace Kitpymes.Core.Logger.Serilog;
 
 using System;
+using System.Linq;
 using Kitpymes.Core.Logger.Abstractions;
 using Kitpymes.Core.Shared.Extensions;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 /*
    Clase de extensión SerilogServiceCollectionExtensions
@@ -32,12 +32,30 @@ public static class SerilogServiceCollectionExtensions
     /// </summary>
     /// <param name="services">Colección de servicios.</param>
     /// <param name="settings">Configuración de Serilog.</param>
-    /// <returns>La interface ILoggerService.</returns>
+    /// <returns>La interface ILoggerService registrada.</returns>
+    /// <remarks>
+    /// <para>Registra una única instancia (singleton) y la devuelve. Si ya había un <see cref="ILoggerService"/>
+    /// registrado, no registra otro y devuelve el existente.</para>
+    /// <para>El contenedor libera la instancia, y vacía los eventos pendientes, al liberarse él; si no se resuelve
+    /// nunca del contenedor, se vacía al terminar el proceso o al llamar a <see cref="SerilogProvider.Dispose()"/>.</para>
+    /// </remarks>
     public static ILoggerService? LoadSerilog(this IServiceCollection services, SerilogSettings? settings)
     {
-        services.TryAddTransient<ILoggerService>(provider => new SerilogProvider(settings.ToThrowIfNullOrEmpty()));
+        var existing = services.LastOrDefault(descriptor => descriptor.ServiceType == typeof(ILoggerService));
 
-        return services.ToService<ILoggerService>();
+        if (existing is not null)
+        {
+            return existing.ImplementationInstance as ILoggerService
+                ?? (existing.ImplementationFactory?.Target as Registration)?.Provider
+                ?? services.ToService<ILoggerService>();
+        }
+
+        var registration = new Registration(new SerilogProvider(settings.ToThrowIfNullOrEmpty()));
+
+        // Con fábrica y no con la instancia: así el contenedor la libera (y vacía los eventos) al liberarse.
+        services.AddSingleton<ILoggerService>(registration.Get);
+
+        return registration.Provider;
     }
 
     /// <summary>
@@ -48,4 +66,23 @@ public static class SerilogServiceCollectionExtensions
     /// <returns>La interface ILoggerService.</returns>
     public static ILoggerService? LoadSerilog(this IServiceCollection services, Action<SerilogOptions> options)
         => services.LoadSerilog(options.ToConfigureOrDefault().SerilogSettings);
+
+    /// <summary>
+    /// Fábrica del registro: permite saber qué instancia se registró sin construir un contenedor.
+    /// </summary>
+    /// <param name="provider">Instancia registrada.</param>
+    private sealed class Registration(SerilogProvider provider)
+    {
+        /// <summary>
+        /// Obtiene la instancia registrada.
+        /// </summary>
+        public SerilogProvider Provider { get; } = provider;
+
+        /// <summary>
+        /// Devuelve la instancia registrada.
+        /// </summary>
+        /// <param name="services">Contenedor (no se usa).</param>
+        /// <returns>La instancia registrada.</returns>
+        public ILoggerService Get(IServiceProvider services) => this.Provider;
+    }
 }

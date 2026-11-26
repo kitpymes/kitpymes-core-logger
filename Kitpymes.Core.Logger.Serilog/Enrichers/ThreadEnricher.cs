@@ -28,8 +28,6 @@ public class ThreadEnricher : ILogEventEnricher
     /// </summary>
     public const string ThreadPropertyName = "Thread";
 
-    private LogEventProperty? lastValue;
-
     /// <summary>
     /// Enriquecer el evento de registro.
     /// </summary>
@@ -51,13 +49,6 @@ public class ThreadEnricher : ILogEventEnricher
             threadValue += thread?.ManagedThreadId > 0 ? $" - {thread.Name}" : thread?.Name;
         }
 
-        var last = this.lastValue;
-
-        if (last is null || (last.Value is ScalarValue scalarValue && (string?)scalarValue.Value != threadValue))
-        {
-            this.lastValue = last = new LogEventProperty(ThreadPropertyName, new ScalarValue(threadValue));
-
-            logEvent?.AddPropertyIfAbsent(last);
-        }
+        logEvent?.AddPropertyIfAbsent(new LogEventProperty(ThreadPropertyName, new ScalarValue(threadValue)));
     }
 }

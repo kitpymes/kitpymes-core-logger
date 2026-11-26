@@ -8,6 +8,7 @@
 namespace Kitpymes.Core.Logger;
 
 using System;
+using System.Linq;
 using Kitpymes.Core.Logger.Serilog;
 using Kitpymes.Core.Shared.Extensions;
 using Microsoft.Extensions.Configuration;
@@ -34,7 +35,9 @@ public static class LoggerServiceCollectionExtensions
     /// <returns>IServiceCollection.</returns>
     public static IServiceCollection LoadLogger(this IServiceCollection services)
     {
-        var configuration = services.ToService<IConfiguration>();
+        // La IConfiguration que registra el host suele ser una instancia: se toma sin construir un contenedor.
+        var configuration = services.LastOrDefault(descriptor => descriptor.ServiceType == typeof(IConfiguration))?.ImplementationInstance as IConfiguration
+            ?? services.ToService<IConfiguration>();
 
         var settings = configuration?.GetSection(nameof(LoggerSettings))?.Get<LoggerSettings>();
 

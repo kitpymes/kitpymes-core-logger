@@ -14,8 +14,6 @@ using System.Linq;
 using System.Net;
 using global::Serilog;
 using global::Serilog.Configuration;
-using global::Serilog.Context;
-using global::Serilog.Debugging;
 using global::Serilog.Formatting.Display;
 using global::Serilog.Sinks.MSSqlServer;
 using Kitpymes.Core.Shared.Extensions;
@@ -44,11 +42,8 @@ public static class SerilogExtensions
     /// <returns>La clase LoggerConfiguration.</returns>
     public static LoggerConfiguration AddDefaultSettings(this LoggerConfiguration loggerConfiguration, string title)
     {
-        SelfLog.Enable(msg => System.Diagnostics.Debug.WriteLine(msg));
-
-        LogContext.PushProperty("Title", title);
-
         return loggerConfiguration.ToThrowIfNullOrEmpty()
+            .Enrich.WithTitle(title)
             .Enrich.WithMachineName()
             .Enrich.WithProcess()
             .Enrich.WithThread()
@@ -178,7 +173,7 @@ public static class SerilogExtensions
             columnOptions.TimeStamp.NonClusteredIndex = true;
             columnOptions.TimeStamp.AllowNull = true;
 
-            loggerConfiguration.ToThrowIfNullOrEmpty().AuditTo.MSSqlServer(
+            loggerConfiguration.ToThrowIfNullOrEmpty().WriteTo.MSSqlServer(
                 sinkOptions: new MSSqlServerSinkOptions
                 {
                     SchemaName = settings.SchemaName,
@@ -209,14 +204,16 @@ public static class SerilogExtensions
     /// <param name="loggerLevel">El nivel mínimo habilitado para el log de errores.</param>
     /// <param name="defaulLevel">Nivel por defecto a devolver.</param>
     /// <returns>El nivel mínimo de serilog LogEventLevel.</returns>
+    /// <remarks>Sin distinguir mayúsculas: Trace o Verbose, Debug, Info o Information, Warn o Warning, Error y Fatal.</remarks>
     public static Seri.Events.LogEventLevel ToMinimumLevel(this string? loggerLevel, Seri.Events.LogEventLevel defaulLevel = Seri.Events.LogEventLevel.Information)
-    => loggerLevel switch
+    => loggerLevel?.Trim().ToUpperInvariant() switch
     {
-        "Trace" => Seri.Events.LogEventLevel.Verbose,
-        "Debug" => Seri.Events.LogEventLevel.Debug,
-        "Info" => Seri.Events.LogEventLevel.Information,
-        "Error" => Seri.Events.LogEventLevel.Error,
-        "Fatal" => Seri.Events.LogEventLevel.Fatal,
+        "TRACE" or "VERBOSE" => Seri.Events.LogEventLevel.Verbose,
+        "DEBUG" => Seri.Events.LogEventLevel.Debug,
+        "INFO" or "INFORMATION" => Seri.Events.LogEventLevel.Information,
+        "WARN" or "WARNING" => Seri.Events.LogEventLevel.Warning,
+        "ERROR" => Seri.Events.LogEventLevel.Error,
+        "FATAL" => Seri.Events.LogEventLevel.Fatal,
         _ => defaulLevel,
     };
 

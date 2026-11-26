@@ -8,6 +8,7 @@
 namespace Kitpymes.Core.Logger.Serilog;
 
 using System;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using global::Serilog;
@@ -22,256 +23,261 @@ using global::Serilog;
 /// Contiene la implemetación del servicio del logeo de errores de Serilog.
 /// </summary>
 /// <remarks>
-/// <para>En esta clase se pueden agregar todas las acciones del servicio de Serilog.</para>
+/// <para>Cada instancia creada con el constructor tiene un único logger de Serilog, que se crea con el primer
+/// <see cref="CreateLogger(string)"/> y se libera con <see cref="Dispose()"/> o al terminar el proceso.</para>
+/// <para>Cada <see cref="CreateLogger(string)"/> devuelve un logger nuevo con su título, que escribe en ese
+/// logger de Serilog; no se libera por separado.</para>
 /// </remarks>
-/// <remarks>
-/// Inicializa una nueva instancia de la clase <see cref="SerilogProvider"/>.
-/// </remarks>
-/// <param name="settings">Configuración de Serilog.</param>
-public class SerilogProvider(SerilogSettings settings)
-    : Abstractions.ILogger, Abstractions.ILoggerService
+public class SerilogProvider : Abstractions.ILogger, Abstractions.ILoggerService, IDisposable
 {
-    private ILogger? logger;
+    private readonly SerilogSettings settings;
 
-    private SerilogSettings SerilogSettings { get; } = settings;
+    private readonly Lazy<global::Serilog.Core.Logger> root;
 
-    private ILogger? Logger { get => logger; set => logger = value; }
+    private readonly SerilogProvider owner;
+
+    private readonly ILogger? logger;
+
+    private int disposed;
+
+    /// <summary>
+    /// Inicializa una nueva instancia de la clase <see cref="SerilogProvider"/>.
+    /// </summary>
+    /// <param name="settings">Configuración de Serilog.</param>
+    /// <exception cref="ArgumentNullException">Si <paramref name="settings"/> es nulo.</exception>
+    public SerilogProvider(SerilogSettings settings)
+    {
+        this.settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        this.root = new Lazy<global::Serilog.Core.Logger>(this.CreateRoot, LazyThreadSafetyMode.ExecutionAndPublication);
+        this.owner = this;
+        AppDomain.CurrentDomain.ProcessExit += this.OnProcessExit;
+    }
+
+    private SerilogProvider(SerilogProvider owner, string title)
+    {
+        this.settings = owner.settings;
+        this.root = owner.root;
+        this.owner = owner;
+        this.logger = owner.root.Value.ForContext(
+            TitleEnricher.TitlePropertyName,
+            string.IsNullOrWhiteSpace(title) ? Process.GetCurrentProcess().ProcessName : title);
+    }
 
     /// <summary>
     /// Crea un log nuevo.
     /// </summary>
     /// <param name="title">Título del log.</param>
-    /// <returns>La interface ILogger.</returns>
-    public Abstractions.ILogger CreateLogger(string title)
-    {
-        this.Logger = new LoggerConfiguration()
-            .MinimumLevel.Is(SerilogSettings.MinimumLevel.ToMinimumLevel())
-            .AddDefaultSettings(title)
-            .AddConsole(this.SerilogSettings.Console)
-            .AddFile(this.SerilogSettings.File)
-            .AddEmail(this.SerilogSettings.Email)
-            .AddSqlserver(this.SerilogSettings.SqlServer)
-            .CreateLogger();
-
-        return this;
-    }
+    /// <returns>Un logger nuevo con ese título.</returns>
+    public Abstractions.ILogger CreateLogger(string title) => new SerilogProvider(this.owner, title);
 
     /// <summary>
     /// Crea un log nuevo.
     /// </summary>
-    /// <typeparam name="TSourceContext">Título del log.</typeparam>
-    /// <returns>La interface ILogger.</returns>
+    /// <typeparam name="TSourceContext">Tipo cuyo nombre se usa como título.</typeparam>
+    /// <returns>Un logger nuevo con ese título.</returns>
     public Abstractions.ILogger CreateLogger<TSourceContext>() => this.CreateLogger(typeof(TSourceContext).Name);
 
     /// <summary>
-    /// Logea cualquier cosa que ocurra, es el nivel mas bajo.
+    /// Registra un mensaje de nivel Trace.
     /// </summary>
-    /// <param name="message">El mensaje personalizado a mostrar.</param>
-    /// <returns>La interface ILogger.</returns>
+    /// <param name="message">Mensaje.</param>
+    /// <returns>Este logger.</returns>
     public Abstractions.ILogger Trace(string message)
     {
-        this.Logger?.Verbose(message);
-
-        Close();
-
+        this.logger?.Verbose(message);
         return this;
     }
 
     /// <summary>
-    /// Logea cualquier cosa que ocurra, es el nivel mas bajo.
+    /// Registra un mensaje de nivel Trace con datos.
     /// </summary>
-    /// <param name="message">El mensaje personalizado a mostrar.</param>
-    /// <param name="data">El detalle a mostrar.</param>
-    /// <returns>La interface ILogger.</returns>
+    /// <param name="message">Mensaje.</param>
+    /// <param name="data">Datos.</param>
+    /// <returns>Este logger.</returns>
     public Abstractions.ILogger Trace(string message, object data)
     {
-        this.Logger?.Verbose(message + " => {Data}", data);
-
-        Close();
-
+        this.logger?.Verbose(message + " => {Data}", data);
         return this;
     }
 
     /// <summary>
-    /// Logea los eventos del sistema interno cuando se ejecuta en modo debug.
+    /// Registra un mensaje de nivel Debug.
     /// </summary>
-    /// <param name="message">El mensaje personalizado a mostrar.</param>
-    /// <returns>La interface ILogger.</returns>
+    /// <param name="message">Mensaje.</param>
+    /// <returns>Este logger.</returns>
     public Abstractions.ILogger Debug(string message)
     {
-        this.Logger?.Debug(message);
-
-        Close();
-
+        this.logger?.Debug(message);
         return this;
     }
 
     /// <summary>
-    /// Logea los eventos del sistema interno cuando se ejecuta en modo debug.
+    /// Registra un mensaje de nivel Debug con datos.
     /// </summary>
-    /// <param name="message">El mensaje personalizado a mostrar.</param>
-    /// <param name="data">El detalle a mostrar.</param>
-    /// <returns>La interface ILogger.</returns>
+    /// <param name="message">Mensaje.</param>
+    /// <param name="data">Datos.</param>
+    /// <returns>Este logger.</returns>
     public Abstractions.ILogger Debug(string message, object data)
     {
-        this.Logger?.Debug(message + " => {Data}", data);
-
-        Close();
-
+        this.logger?.Debug(message + " => {Data}", data);
         return this;
     }
 
     /// <summary>
-    /// Logea los eventos del sistema.
+    /// Registra un mensaje de nivel Info.
     /// </summary>
-    /// <param name="message">El mensaje personalizado a mostrar.</param>
-    /// <returns>La interface ILogger.</returns>
+    /// <param name="message">Mensaje.</param>
+    /// <returns>Este logger.</returns>
     public Abstractions.ILogger Info(string message)
     {
-        this.Logger?.Information(message);
-
-        Close();
-
+        this.logger?.Information(message);
         return this;
     }
 
     /// <summary>
-    /// Logea los eventos del sistema.
+    /// Registra un mensaje de nivel Info con datos.
     /// </summary>
-    /// <param name="message">El mensaje personalizado a mostrar.</param>
-    /// <param name="data">El detalle a mostrar.</param>
-    /// <returns>La interface ILogger.</returns>
+    /// <param name="message">Mensaje.</param>
+    /// <param name="data">Datos.</param>
+    /// <returns>Este logger.</returns>
     public Abstractions.ILogger Info(string message, object data)
     {
-        this.Logger?.Information(message + " => {Data}", data);
-
-        Close();
-
+        this.logger?.Information(message + " => {Data}", data);
         return this;
     }
 
     /// <summary>
-    /// Logea los eventos del sistema.
+    /// Registra un evento de nivel Info con una plantilla.
     /// </summary>
-    /// <param name="eventName">El nombre del evento.</param>
-    /// <param name="templateMessage">El mensaje tipo template, para indexar las propiedades.</param>
-    /// <param name="propertyValues">Las propiedades a indexar en el template.</param>
-    /// <returns>La interface ILogger.</returns>
+    /// <param name="eventName">Nombre del evento.</param>
+    /// <param name="templateMessage">Plantilla del mensaje.</param>
+    /// <param name="propertyValues">Valores de la plantilla.</param>
+    /// <returns>Este logger.</returns>
     public Abstractions.ILogger Info(string eventName, string templateMessage, params object[] propertyValues)
     {
-        var message = "{EventName} => " + templateMessage;
-
-        var values = new object[] { eventName }.Concat(propertyValues).ToArray();
-
-        this.Logger?.Information(message, values);
-
-        Close();
-
+        this.logger?.Information("{EventName} => " + templateMessage, new object[] { eventName }.Concat(propertyValues).ToArray());
         return this;
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Registra un mensaje de nivel Warning.
+    /// </summary>
+    /// <param name="message">Mensaje.</param>
+    /// <returns>Este logger.</returns>
     public Abstractions.ILogger Warning(string message)
     {
-        this.Logger?.Warning(message);
-
-        Close();
-
+        this.logger?.Warning(message);
         return this;
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Registra un mensaje de nivel Warning con datos.
+    /// </summary>
+    /// <param name="message">Mensaje.</param>
+    /// <param name="data">Datos.</param>
+    /// <returns>Este logger.</returns>
     public Abstractions.ILogger Warning(string message, object data)
     {
-        this.Logger?.Warning(message + " => {Data}", data);
-
-        Close();
-
+        this.logger?.Warning(message + " => {Data}", data);
         return this;
     }
 
     /// <summary>
-    /// Loguea los errores customizados o cuando surge alguna excepción no controlada del sistema.
+    /// Registra un mensaje de nivel Error.
     /// </summary>
-    /// <param name="message">El mensaje personalizado a mostrar.</param>
-    /// <returns>La interface ILogger.</returns>
+    /// <param name="message">Mensaje.</param>
+    /// <returns>Este logger.</returns>
     public Abstractions.ILogger Error(string message)
     {
-        this.Logger?.Error(message);
-
-        Close(1000);
-
+        this.logger?.Error(message);
         return this;
     }
 
     /// <summary>
-    /// Loguea los errores customizados o cuando surge alguna excepción no controlada del sistema.
+    /// Registra un mensaje de nivel Error con datos.
     /// </summary>
-    /// <param name="message">El mensaje personalizado a mostrar.</param>
-    /// <param name="data">El detalle a mostrar.</param>
-    /// <returns>La interface ILogger.</returns>
+    /// <param name="message">Mensaje.</param>
+    /// <param name="data">Datos.</param>
+    /// <returns>Este logger.</returns>
     public Abstractions.ILogger Error(string message, object data)
     {
-        this.Logger?.Error(message + " => {Data}", data);
-
-        Close(1000);
-
+        this.logger?.Error(message + " => {Data}", data);
         return this;
     }
 
     /// <summary>
-    /// Loguea los errores customizados o cuando surge alguna excepción no controlada del sistema.
+    /// Registra un evento de nivel Error con una plantilla.
     /// </summary>
-    /// <param name="eventName">El nombre del evento.</param>
-    /// <param name="templateMessage">El mensaje tipo template, para indexar las propiedades.</param>
-    /// <param name="propertyValues">Las propiedades a indexar en el template.</param>
-    /// <returns>La interface ILogger.</returns>
+    /// <param name="eventName">Nombre del evento.</param>
+    /// <param name="templateMessage">Plantilla del mensaje.</param>
+    /// <param name="propertyValues">Valores de la plantilla.</param>
+    /// <returns>Este logger.</returns>
     public Abstractions.ILogger Error(string eventName, string templateMessage, params object[] propertyValues)
     {
-        var message = "{EventName} => " + templateMessage;
-
-        var values = new object[] { eventName }.Concat(propertyValues).ToArray();
-
-        this.Logger?.Error(message, values);
-
-        Close(1000);
-
+        this.logger?.Error("{EventName} => " + templateMessage, new object[] { eventName }.Concat(propertyValues).ToArray());
         return this;
     }
 
     /// <summary>
-    /// Loguea los errores customizados o cuando surge alguna excepción no controlada del sistema.
+    /// Registra una excepción de nivel Error.
     /// </summary>
-    /// <param name="exception">La excepción ocurrida a mostrar.</param>
-    /// <returns>La interface ILogger.</returns>
+    /// <param name="exception">Excepción, que se guarda como excepción del evento.</param>
+    /// <returns>Este logger.</returns>
     public Abstractions.ILogger Error(Exception exception)
     {
-        this.Logger?.Error("Exception => {Exception}", exception);
-
-        Close(1000);
-
+        this.logger?.Error(exception, "Exception => {ExceptionMessage}", exception?.Message);
         return this;
     }
 
     /// <summary>
-    /// Loguea los errores customizados o cuando surge alguna excepción no controlada del sistema.
+    /// Registra un mensaje y una excepción de nivel Error.
     /// </summary>
-    /// <param name="message">El mensaje personalizado a mostrar.</param>
-    /// <param name="exception">La excepción ocurrida a mostrar.</param>
-    /// <returns>La interface ILogger.</returns>
+    /// <param name="message">Mensaje.</param>
+    /// <param name="exception">Excepción, que se guarda como excepción del evento.</param>
+    /// <returns>Este logger.</returns>
     public Abstractions.ILogger Error(string message, Exception exception)
     {
-        this.Logger?.Error(message + " => {Exception}", exception);
-
-        Close(1000);
-
+        this.logger?.Error(exception, message);
         return this;
     }
 
-    private void Close(int millisecondsTimeout = 50)
+    /// <summary>
+    /// Libera el logger de Serilog de esta instancia y vacía los eventos pendientes.
+    /// </summary>
+    /// <remarks>Sólo actúa en la instancia creada con el constructor; en un logger de <see cref="CreateLogger(string)"/> no hace nada.</remarks>
+    public void Dispose()
     {
-        Thread.Sleep(millisecondsTimeout);
-
-        Log.CloseAndFlush();
+        this.Dispose(true);
+        GC.SuppressFinalize(this);
     }
+
+    /// <summary>
+    /// Libera el logger de Serilog de esta instancia y vacía los eventos pendientes.
+    /// </summary>
+    /// <param name="disposing">Si se llama desde <see cref="Dispose()"/>.</param>
+    protected virtual void Dispose(bool disposing)
+    {
+        if (!disposing || !ReferenceEquals(this.owner, this) || Interlocked.Exchange(ref this.disposed, 1) == 1)
+        {
+            return;
+        }
+
+        AppDomain.CurrentDomain.ProcessExit -= this.OnProcessExit;
+
+        if (this.root.IsValueCreated)
+        {
+            this.root.Value.Dispose();
+        }
+    }
+
+    private global::Serilog.Core.Logger CreateRoot() => new LoggerConfiguration()
+        .MinimumLevel.Is(this.settings.MinimumLevel.ToMinimumLevel())
+        .AddDefaultSettings(string.Empty)
+        .AddConsole(this.settings.Console)
+        .AddFile(this.settings.File)
+        .AddEmail(this.settings.Email)
+        .AddSqlserver(this.settings.SqlServer)
+        .CreateLogger();
+
+    private void OnProcessExit(object? sender, EventArgs e) => this.Dispose();
 }
