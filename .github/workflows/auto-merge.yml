@@ -52,7 +52,7 @@ jobs:
       RESULTADO_CI: ${{ github.event.workflow_run.conclusion }}
       ESTA_EJECUCION: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       # Jobs de ci que tienen que estar en verde de verdad (no omitidos). Cambia según el repo.
-      JOBS_EN_VERDE: build-test mutation
+      JOBS_EN_VERDE: build-test mutation pack-check
     steps:
       - uses: actions/checkout@v7
         with:
