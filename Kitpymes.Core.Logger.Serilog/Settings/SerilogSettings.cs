@@ -7,6 +7,7 @@
 
 namespace Kitpymes.Core.Logger.Serilog
 {
+    using System.Collections.Generic;
     using Kitpymes.Core.Logger.Abstractions;
 
     /*
@@ -44,6 +45,17 @@ namespace Kitpymes.Core.Logger.Serilog
                 }
             }
         }
+
+        /// <summary>
+        /// Obtiene o establece el nivel mínimo por categoría (prefijo del nombre), p. ej. <c>"Microsoft.AspNetCore": "Warning"</c>.
+        /// </summary>
+        /// <remarks>
+        /// <para>Actúa sobre la categoría de <c>ILogger&lt;T&gt;</c>, que es el nombre completo del tipo; el <c>ILoggerService</c> antiguo no tiene categoría.</para>
+        /// <para>Si no se indican, <c>Microsoft</c> y <c>System</c> quedan en <c>Warning</c> (<see cref="KitpymesSerilog.DefaultMinimumLevelOverride"/>).</para>
+        /// </remarks>
+#pragma warning disable CA2227 // Se rellena desde la configuración (appsettings).
+        public Dictionary<string, string>? MinimumLevelOverride { get; set; }
+#pragma warning restore CA2227
 
         /// <summary>
         /// Obtiene o establece la configuración del logeo de errores de consola.

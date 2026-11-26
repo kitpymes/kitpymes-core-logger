@@ -1,5 +1,5 @@
 ﻿// -----------------------------------------------------------------------
-// <copyright file="LoggerServiceCollectionExtensions.cs" company="Kitpymes">
+// <copyright file="LoggerServiceCollectionExtensions.Obsolete.cs" company="Kitpymes">
 // Copyright (c) Kitpymes. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project docs folder for full license information.
 // </copyright>
@@ -8,6 +8,7 @@
 namespace Kitpymes.Core.Logger;
 
 using System;
+using System.ComponentModel;
 using System.Linq;
 using Kitpymes.Core.Logger.Serilog;
 using Kitpymes.Core.Shared.Extensions;
@@ -26,6 +27,8 @@ using Microsoft.Extensions.DependencyInjection;
 /// <remarks>
 /// <para>En esta clase se pueden agregar todas las extensiones de los servicios para el logeo de errores.</para>
 /// </remarks>
+[Obsolete("Use builder.Logging.AddKitpymesLogging(...) (Kitpymes.Core.Logger) o builder.Logging.AddKitpymesSerilog(...) (Kitpymes.Core.Logger.Serilog), y ILogger<T>. Se elimina en 3.0.0.", DiagnosticId = "KPY0011")]
+[EditorBrowsable(EditorBrowsableState.Never)]
 public static class LoggerServiceCollectionExtensions
 {
     /// <summary>

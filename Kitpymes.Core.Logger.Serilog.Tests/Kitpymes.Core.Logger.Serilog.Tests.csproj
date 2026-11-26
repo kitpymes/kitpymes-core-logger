@@ -24,4 +24,15 @@
     </EmbeddedResource>
   </ItemGroup>
 
+  <PropertyGroup>
+    <!-- Obsoletos de la 2.3.0 (se quitan en la 3.0.0): la librería y sus pruebas los siguen usando. -->
+    <NoWarn>$(NoWarn);KPY0009;KPY0010;KPY0011</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- Firmado como la librería: ve sus tipos internos (InternalsVisibleTo con clave). -->
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>$(KitpymesRoot)docs\signassembly\SignStrong.snk</AssemblyOriginatorKeyFile>
+  </PropertyGroup>
+
 </Project>

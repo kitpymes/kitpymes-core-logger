@@ -1,5 +1,5 @@
 ﻿// -----------------------------------------------------------------------
-// <copyright file="Log.cs" company="Kitpymes">
+// <copyright file="Log.Obsolete.cs" company="Kitpymes">
 // Copyright (c) Kitpymes. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project docs folder for full license information.
 // </copyright>
@@ -8,6 +8,7 @@
 namespace Kitpymes.Core.Logger;
 
 using System;
+using System.ComponentModel;
 using Kitpymes.Core.Logger.Abstractions;
 using Kitpymes.Core.Logger.Serilog;
 using Kitpymes.Core.Shared.Extensions;
@@ -25,6 +26,8 @@ using Microsoft.Extensions.Configuration;
 /// <remarks>
 /// <para>En esta clase se pueden agregar todas las opciones de configuración para los proveedores de errores estático.</para>
 /// </remarks>
+[Obsolete("Use KitpymesSerilog.CreateLoggerFactory(...) (Kitpymes.Core.Logger.Serilog) y CreateLogger<T>() de esa fábrica, liberándola al terminar. Se elimina en 3.0.0.", DiagnosticId = "KPY0010")]
+[EditorBrowsable(EditorBrowsableState.Never)]
 public static class Log
 {
     /// <summary>

@@ -1,5 +1,5 @@
 ﻿// -----------------------------------------------------------------------
-// <copyright file="ILogger.cs" company="Kitpymes">
+// <copyright file="ILogger.Obsolete.cs" company="Kitpymes">
 // Copyright (c) Kitpymes. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project docs folder for full license information.
 // </copyright>
@@ -8,6 +8,7 @@
 namespace Kitpymes.Core.Logger.Abstractions;
 
 using System;
+using System.ComponentModel;
 
 /*
    Interface de ILogger
@@ -21,6 +22,8 @@ using System;
 /// <remarks>
 /// <para>En esta interface se pueden agregar todos los contratos que deberán ser implementados por los diferentes proveedores para logear los errores.</para>
 /// </remarks>
+[Obsolete("Use ILogger<T> de Microsoft.Extensions.Logging, registrado con builder.Logging.AddKitpymesLogging(configuration) (Kitpymes.Core.Logger) o builder.Logging.AddKitpymesSerilog(...) (Kitpymes.Core.Logger.Serilog). Se elimina en 3.0.0.", DiagnosticId = "KPY0009")]
+[EditorBrowsable(EditorBrowsableState.Never)]
 public interface ILogger
 {
     /// <summary>

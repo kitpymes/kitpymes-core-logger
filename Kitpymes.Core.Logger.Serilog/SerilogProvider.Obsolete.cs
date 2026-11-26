@@ -1,5 +1,5 @@
 ﻿// -----------------------------------------------------------------------
-// <copyright file="SerilogProvider.cs" company="Kitpymes">
+// <copyright file="SerilogProvider.Obsolete.cs" company="Kitpymes">
 // Copyright (c) Kitpymes. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project docs folder for full license information.
 // </copyright>
@@ -8,6 +8,7 @@
 namespace Kitpymes.Core.Logger.Serilog;
 
 using System;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
@@ -28,6 +29,8 @@ using global::Serilog;
 /// <para>Cada <see cref="CreateLogger(string)"/> devuelve un logger nuevo con su título, que escribe en ese
 /// logger de Serilog; no se libera por separado.</para>
 /// </remarks>
+[Obsolete("Use ILogger<T> de Microsoft.Extensions.Logging, registrado con builder.Logging.AddKitpymesLogging(configuration) (Kitpymes.Core.Logger) o builder.Logging.AddKitpymesSerilog(...) (Kitpymes.Core.Logger.Serilog). Se elimina en 3.0.0.", DiagnosticId = "KPY0009")]
+[EditorBrowsable(EditorBrowsableState.Never)]
 public class SerilogProvider : Abstractions.ILogger, Abstractions.ILoggerService, IDisposable
 {
     private readonly SerilogSettings settings;
@@ -270,14 +273,7 @@ public class SerilogProvider : Abstractions.ILogger, Abstractions.ILoggerService
         }
     }
 
-    private global::Serilog.Core.Logger CreateRoot() => new LoggerConfiguration()
-        .MinimumLevel.Is(this.settings.MinimumLevel.ToMinimumLevel())
-        .AddDefaultSettings(string.Empty)
-        .AddConsole(this.settings.Console)
-        .AddFile(this.settings.File)
-        .AddEmail(this.settings.Email)
-        .AddSqlserver(this.settings.SqlServer)
-        .CreateLogger();
+    private global::Serilog.Core.Logger CreateRoot() => KitpymesSerilog.CreateLogger(this.settings);
 
     private void OnProcessExit(object? sender, EventArgs e) => this.Dispose();
 }
