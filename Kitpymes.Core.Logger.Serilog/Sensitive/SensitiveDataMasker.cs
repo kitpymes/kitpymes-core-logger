@@ -169,7 +169,12 @@ internal static class SensitiveDataMasker
         return new MaskedTemplate(changed ? Parser.Parse(text.ToString()) : template, maskedProperties);
     }
 
-    private static bool EndsWithSensitiveKey(string text)
+    /// <summary>
+    /// Indica si el texto acaba en una clave sensible seguida de = o : (lo que venga detrás es un secreto).
+    /// </summary>
+    /// <param name="text">Texto.</param>
+    /// <returns><c>true</c> si acaba en una clave sensible (también si no se pudo revisar a tiempo).</returns>
+    internal static bool EndsWithSensitiveKey(string text)
     {
         try
         {
@@ -234,12 +239,13 @@ internal static class SensitiveDataMasker
     {
         var result = new StringBuilder(text.Length);
         var position = 0;
+        var unclosed = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (Match match in XmlKey.Matches(text))
         {
             var key = match.Groups["key"].Value;
 
-            if (match.Index < position || !SensitiveDataNames.IsSensitive(key))
+            if (match.Index < position || unclosed.Contains(key) || !SensitiveDataNames.IsSensitive(key))
             {
                 continue;
             }
@@ -247,8 +253,10 @@ internal static class SensitiveDataMasker
             var start = match.Index + match.Length;
             var end = text.IndexOf("</" + key + ">", start, StringComparison.Ordinal);
 
+            // Sin cierre más adelante, tampoco lo habrá para las siguientes aperturas: no se vuelve a buscar.
             if (end < 0)
             {
+                unclosed.Add(key);
                 continue;
             }
 
@@ -378,10 +386,28 @@ internal static class SensitiveDataMasker
             var c = text[end];
 
             if (";&}]\r\n".IndexOf(c, StringComparison.Ordinal) >= 0
-                || (c == ',' && end + 1 < text.Length && char.IsWhiteSpace(text[end + 1]))
-                || (char.IsWhiteSpace(c) && StartsKey(text, end)))
+                || (c == ',' && end + 1 < text.Length && char.IsWhiteSpace(text[end + 1])))
             {
                 break;
+            }
+
+            if (char.IsWhiteSpace(c))
+            {
+                // Los espacios seguidos se saltan de una vez: cada carácter se mira un número fijo de veces.
+                var next = end;
+
+                while (next < text.Length && char.IsWhiteSpace(text[next]) && text[next] != '\r' && text[next] != '\n')
+                {
+                    next++;
+                }
+
+                if (StartsKey(text, next))
+                {
+                    break;
+                }
+
+                end = next;
+                continue;
             }
 
             end++;
@@ -395,16 +421,10 @@ internal static class SensitiveDataMasker
         return end;
     }
 
-    // ¿Empieza otra clave (palabra seguida de = o :) después de estos espacios?
+    // ¿Empieza aquí otra clave (palabra seguida de = o :)?
     private static bool StartsKey(string text, int index)
     {
         var i = index;
-
-        while (i < text.Length && char.IsWhiteSpace(text[i]))
-        {
-            i++;
-        }
-
         var wordStart = i;
 
         while (i < text.Length && i - wordStart <= 100 && (char.IsLetterOrDigit(text[i]) || text[i] == '_' || text[i] == '-'))

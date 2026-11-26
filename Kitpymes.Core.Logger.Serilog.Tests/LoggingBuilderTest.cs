@@ -260,6 +260,51 @@ namespace Kitpymes.Core.Logger.Serilog.Tests
         }
 
         [TestMethod]
+        public void BeginScope_HuecoDetrasDeClave_YTextoComoMicrosoft()
+        {
+            var services = new ServiceCollection();
+            services.AddLogging(builder => builder.AddKitpymesSerilog(ConFichero()));
+
+            using (var provider = services.BuildServiceProvider())
+            {
+                var logger = provider.GetRequiredService<ILogger<LoggingBuilderTest>>();
+                using (logger.BeginScope("pwd={Valor}", Secreto))
+                using (logger.BeginScope("{Id,5}|{Lista}|{Decimal}|{Nulo}", 7, new List<int> { 1, 2 }, 1.5, null!))
+                {
+                    logger.LogInformation("Dentro");
+                }
+            }
+
+            var texto = LeerTexto();
+            Assert.IsFalse(texto.Contains(Secreto, StringComparison.Ordinal), texto);
+            StringAssert.Contains(texto, "    7|1, 2|1.5|(null)");
+        }
+
+        [TestMethod]
+        public void BeginScope_ConservaLosScopesDeActividad()
+        {
+            var services = new ServiceCollection();
+            services.AddLogging(builder => builder
+                .Configure(o => o.ActivityTrackingOptions = ActivityTrackingOptions.TraceId | ActivityTrackingOptions.SpanId)
+                .AddKitpymesSerilog(ConFichero()));
+            using var actividad = new System.Diagnostics.Activity("Prueba").Start();
+
+            using (var provider = services.BuildServiceProvider())
+            {
+                var logger = provider.GetRequiredService<ILogger<LoggingBuilderTest>>();
+                using (logger.BeginScope("token={Valor}", Secreto))
+                {
+                    logger.LogInformation("Con actividad");
+                }
+            }
+
+            var evento = LeerEventos().Single();
+            Assert.AreEqual(actividad.TraceId.ToString(), evento.GetProperty("TraceId").GetString());
+            Assert.AreEqual(actividad.SpanId.ToString(), evento.GetProperty("SpanId").GetString());
+            Assert.IsFalse(LeerTexto().Contains(Secreto, StringComparison.Ordinal), LeerTexto());
+        }
+
+        [TestMethod]
         public void MinimumLevelOverride_NivelQueNoExiste_Lanza()
         {
             var settings = ConFichero();
