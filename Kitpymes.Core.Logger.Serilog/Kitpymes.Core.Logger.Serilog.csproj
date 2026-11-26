@@ -18,6 +18,8 @@
     <PackageReference Include="Serilog.Sinks.Async" Version="1.5.0" />
     <PackageReference Include="Serilog.Sinks.Email" Version="4.2.1" />
     <PackageReference Include="Serilog.Sinks.MSSqlServer" Version="6.5.0" />
+    <!-- Serilog como proveedor de Microsoft.Extensions.Logging (ILogger<T>), desde la 2.3.0. -->
+    <PackageReference Include="Serilog.Extensions.Logging" Version="10.0.0" />
     <!-- Serilog.Sinks.MSSqlServer 6.5.0 trae Microsoft.Data.SqlClient 5.0.1 y, con él, Azure.Identity 1.6.0 y
          System.IdentityModel.Tokens.Jwt 6.21.0, con vulnerabilidades conocidas (GHSA-98g6-xh36-x2p7, GHSA-5mfx-4wcx-rv27,
          GHSA-wvxc-855f-jvrv, GHSA-m5vv-6r4h-3vj9, GHSA-59j7-ghrg-fj52). Se fijan versiones corregidas: llegan también
@@ -28,5 +30,15 @@
          GHSA-846f-f764-76mx (alta) y GHSA-2fmv-rv2c-59x7 (moderada), corregidas en la 10.0.13. -->
     <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
   </ItemGroup>
+
+  <ItemGroup>
+    <!-- Los tests prueban la ocultación de datos sensibles por dentro (fallo cerrado incluido). -->
+    <InternalsVisibleTo Include="Kitpymes.Core.Logger.Serilog.Tests" Key="00240000048000009400000006020000002400005253413100040000010001000d620109e52c04d66803ea21477c1b249ce378a554726113670d93b0be4878b7f17714ca1b5e2e868d4bf70928137ac919f662921baf981e9d7fd2e425e0c0dfa38e1f1cac58925903932868065cf0069ab7d0863036d15d93a2183b328ecb7332b2fb98b7daf23f67446e7a88081fc3ba5372cba138b49d9da2238aae979ba3" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <!-- Obsoletos de la 2.3.0 (se quitan en la 3.0.0): la librería y sus pruebas los siguen usando. -->
+    <NoWarn>$(NoWarn);KPY0009;KPY0010;KPY0011</NoWarn>
+  </PropertyGroup>
 
 </Project>
