@@ -27,7 +27,7 @@ public class MachineNameEnricher : ILogEventEnricher
     /// </summary>
     public const string MachineNamePropertyName = "MachineName";
 
-    private readonly LogEventProperty property = new(MachineNamePropertyName, new ScalarValue(Environment.MachineName));
+    private readonly LogEventProperty property = new LogEventProperty(MachineNamePropertyName, new ScalarValue(Environment.MachineName));
 
     /// <summary>
     /// Enriquecer el evento de registro.
