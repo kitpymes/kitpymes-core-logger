@@ -58,6 +58,13 @@ namespace Kitpymes.Core.Logger.Serilog.Tests
         [DataRow("Credentials")]
         [DataRow("Bearer")]
         [DataRow("user.password")]
+        [DataRow("accesstoken")]
+        [DataRow("clientsecret")]
+        [DataRow("AccountKey")]
+        [DataRow("sig")]
+        [DataRow("UserPass")]
+        [DataRow("db_pass")]
+        [DataRow("SharedAccessKey")]
         public void IsSensitive_NombresDeCredenciales(string nombre)
         {
             Assert.IsTrue(SensitiveDataNames.IsSensitive(nombre), nombre);
@@ -76,6 +83,9 @@ namespace Kitpymes.Core.Logger.Serilog.Tests
         [DataRow("SecretarioId")]
         [DataRow("Passenger")]
         [DataRow("Bypass")]
+        [DataRow("ByPass")]
+        [DataRow("Passport")]
+        [DataRow("Signature")]
         [DataRow("Spinner")]
         [DataRow("Tokenizer")]
         [DataRow("Keyboard")]
@@ -114,10 +124,102 @@ namespace Kitpymes.Core.Logger.Serilog.Tests
         [DataRow("token=s3cr3t\nsiguiente linea", "token=***\nsiguiente linea")]
         [DataRow("Hora: 10:20, Token: s3cr3t", "Hora: 10:20, Token: ***")]
         [DataRow("Pedido: 5, Estado: Pagado", "Pedido: 5, Estado: Pagado")]
+        [DataRow("Password=ab,S3CRET;Id=1", "Password=***;Id=1")]
+        [DataRow("Server=x;Password='ab;S3CRET';Id=1", "Server=x;Password=***;Id=1")]
+        [DataRow("Password=\"ab \"\" c\";x=1", "Password=***;x=1")]
+        [DataRow("AccountName=a;AccountKey=S3CRET==;EndpointSuffix=core", "AccountName=a;AccountKey=***;EndpointSuffix=core")]
+        [DataRow("https://cuenta.blob/x?sv=2024&sig=S3CRET%2F&se=1", "https://cuenta.blob/x?sv=2024&sig=***&se=1")]
+        [DataRow("<user>ana</user><password>S3CRET</password>", "<user>ana</user><password>***</password>")]
+        [DataRow("accesstoken=S3CRET clientsecret=S3CRET", "accesstoken=*** clientsecret=***")]
+        [DataRow("Token: ", "Token: ")]
+        [DataRow("https://servidor/sin/usuario", "https://servidor/sin/usuario")]
+        [DataRow("{\"token\":\"sin cerrar", "{\"token\":\"***\"")]
         [DataRow("", "")]
         public void MaskText_OcultaLosValoresSensibles(string texto, string esperado)
         {
             Assert.AreEqual(esperado, SensitiveDataMasker.MaskText(texto));
+        }
+
+        [TestMethod]
+        public void MaskText_EntradaGrande_EsRapidaYNoDescarta()
+        {
+            var relleno = "a=x" + new string(' ', 10000) + "y";
+            var base64 = Convert.ToBase64String(new byte[30000]);
+            var reloj = System.Diagnostics.Stopwatch.StartNew();
+
+            var r1 = SensitiveDataMasker.MaskText(relleno);
+            var r2 = SensitiveDataMasker.MaskText(base64);
+            var r3 = SensitiveDataMasker.MaskText(new string('a', 100000));
+            var r4 = SensitiveDataMasker.MaskText(string.Concat(Enumerable.Repeat("a b ", 20000)) + "password=S3CRET");
+
+            reloj.Stop();
+            Assert.AreEqual(relleno, r1);
+            Assert.AreEqual(base64, r2);
+            Assert.AreEqual(100000, r3.Length);
+            StringAssert.EndsWith(r4, "password=***");
+            Assert.IsTrue(reloj.ElapsedMilliseconds < 1000, $"Tardó {reloj.ElapsedMilliseconds} ms.");
+        }
+
+        [TestMethod]
+        public void Mask_EventoConTextoGrande_NoSeDescartaYOcultaLaContrasena()
+        {
+            var evento = Evento("{Relleno} {Password}", ("Relleno", new ScalarValue("a=x" + new string(' ', 10000) + "y")), ("Password", new ScalarValue(Secreto)));
+
+            var resultado = SensitiveDataMasker.Mask(evento);
+
+            Assert.AreEqual("\"***\"", resultado.Properties["Password"].ToString());
+            Assert.AreEqual(2, resultado.Properties.Count);
+        }
+
+        [TestMethod]
+        public void Mask_UriConContrasenaOToken()
+        {
+            var evento = Evento("{A} {B} {C} {D}", ("A", new ScalarValue(new Uri("https://user:" + Secreto + "@host/x"))), ("B", new ScalarValue(new Uri("https://host/x?access_token=" + Secreto))), ("C", new ScalarValue(new Uri("https://host/x"))), ("D", new ScalarValue(Guid.Empty)));
+
+            var resultado = SensitiveDataMasker.Mask(evento);
+
+            Assert.IsFalse(resultado.RenderMessage().Contains(Secreto, StringComparison.Ordinal), resultado.RenderMessage());
+            Assert.AreSame(evento.Properties["C"], resultado.Properties["C"]);
+            Assert.AreSame(evento.Properties["D"], resultado.Properties["D"]);
+        }
+
+        [TestMethod]
+        public void Mask_LaPlantillaConservaSusHuecos()
+        {
+            var normal = Evento("Pedido: {Id} para {User}", ("Id", new ScalarValue(7)), ("User", new ScalarValue("u")));
+            var token = Evento("Token: {TokenId} caducado para {User}", ("TokenId", new ScalarValue(7)), ("User", new ScalarValue("u")));
+
+            var resultado = SensitiveDataMasker.Mask(token);
+
+            Assert.AreSame(normal, SensitiveDataMasker.Mask(normal));
+
+            // La plantilla no cambia; el valor detrás de "Token:" se oculta aunque sea un id (oculta de más, a propósito).
+            Assert.AreSame(token.MessageTemplate, resultado.MessageTemplate);
+            Assert.AreEqual("\"***\"", resultado.Properties["TokenId"].ToString());
+            Assert.AreEqual("\"u\"", resultado.Properties["User"].ToString());
+        }
+
+        [TestMethod]
+        public void Mask_HuecoDetrasDeUnaClaveSensible_SeOculta()
+        {
+            var evento = Evento("pwd={Valor,10} y clave: {Otro} y libre {Tercero}", ("Valor", new ScalarValue("v1")), ("Otro", new ScalarValue("v2")), ("Tercero", new ScalarValue("v3")));
+
+            var resultado = SensitiveDataMasker.Mask(evento);
+
+            Assert.AreEqual(evento.MessageTemplate.Text, resultado.MessageTemplate.Text);
+            Assert.AreEqual("\"***\"", resultado.Properties["Valor"].ToString());
+            Assert.AreEqual("\"***\"", resultado.Properties["Otro"].ToString());
+            Assert.AreEqual("\"v3\"", resultado.Properties["Tercero"].ToString());
+        }
+
+        [TestMethod]
+        public void Mask_LlavesDelTextoSeConservanAlReescribir()
+        {
+            var evento = Evento("{{literal}} token=" + Secreto + " {Id}", ("Id", new ScalarValue(1)));
+
+            var resultado = SensitiveDataMasker.Mask(evento);
+
+            Assert.AreEqual("{literal} token=*** 1", resultado.RenderMessage());
         }
 
         [TestMethod]

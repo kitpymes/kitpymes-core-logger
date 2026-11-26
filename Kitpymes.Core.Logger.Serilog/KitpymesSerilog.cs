@@ -9,6 +9,8 @@ namespace Kitpymes.Core.Logger.Serilog;
 
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using global::Serilog.Events;
 using global::Serilog;
 using Microsoft.Extensions.Logging;
 
@@ -18,14 +20,14 @@ using Microsoft.Extensions.Logging;
 public static class KitpymesSerilog
 {
     /// <summary>
-    /// Niveles mínimos por categoría que se aplican si la configuración no los cambia.
+    /// Obtiene los niveles mínimos por categoría que se aplican si la configuración no los cambia.
     /// </summary>
     /// <remarks><c>Microsoft</c> y <c>System</c> en <c>Warning</c>: sin ellos, cada petición de ASP.NET Core escribe varios Info.</remarks>
-    public static readonly IReadOnlyDictionary<string, string> DefaultMinimumLevelOverride = new Dictionary<string, string>
+    public static IReadOnlyDictionary<string, string> DefaultMinimumLevelOverride { get; } = new ReadOnlyDictionary<string, string>(new Dictionary<string, string>
     {
         ["Microsoft"] = "Warning",
         ["System"] = "Warning",
-    };
+    });
 
     /// <summary>
     /// Crea un logger de Serilog con la configuración.
@@ -42,6 +44,21 @@ public static class KitpymesSerilog
     {
         ArgumentNullException.ThrowIfNull(settings);
 
+        // Primero lo que puede lanzar (niveles por categoría); los sinks, que abren ficheros e hilos, al final.
+        var configuration = new LoggerConfiguration().MinimumLevel.Is(settings.MinimumLevel.ToMinimumLevel());
+
+        var overrides = new Dictionary<string, string>(DefaultMinimumLevelOverride, StringComparer.Ordinal);
+
+        foreach (var level in settings.MinimumLevelOverride ?? new Dictionary<string, string>())
+        {
+            overrides[level.Key] = level.Value;
+        }
+
+        foreach (var level in overrides)
+        {
+            configuration.MinimumLevel.Override(level.Key, ToOverrideLevel(level.Key, level.Value));
+        }
+
         var sinks = new LoggerConfiguration()
             .MinimumLevel.Verbose()
             .AddConsole(settings.Console)
@@ -49,21 +66,6 @@ public static class KitpymesSerilog
             .AddEmail(settings.Email)
             .AddSqlserver(settings.SqlServer)
             .CreateLogger();
-
-        var configuration = new LoggerConfiguration().MinimumLevel.Is(settings.MinimumLevel.ToMinimumLevel());
-
-        foreach (var level in DefaultMinimumLevelOverride)
-        {
-            if (settings.MinimumLevelOverride?.ContainsKey(level.Key) != true)
-            {
-                configuration.MinimumLevel.Override(level.Key, level.Value.ToMinimumLevel());
-            }
-        }
-
-        foreach (var level in settings.MinimumLevelOverride ?? new Dictionary<string, string>())
-        {
-            configuration.MinimumLevel.Override(level.Key, level.Value.ToMinimumLevel());
-        }
 
         return configuration
             .Destructure.With(new SensitiveDestructuringPolicy())
@@ -99,5 +101,15 @@ public static class KitpymesSerilog
         options(serilogOptions);
 
         return CreateLoggerFactory(serilogOptions.SerilogSettings);
+    }
+
+    private static LogEventLevel ToOverrideLevel(string category, string? level)
+    {
+        // Un nivel mal escrito en ToMinimumLevel cae en Information: aquí bajaría Microsoft sin avisar.
+        var parsed = level.ToMinimumLevel((LogEventLevel)(-1));
+
+        return parsed == (LogEventLevel)(-1)
+            ? throw new ArgumentException($"MinimumLevelOverride: el nivel '{level}' de la categoría '{category}' no existe (Trace, Debug, Info, Warn, Error o Fatal).", nameof(level))
+            : parsed;
     }
 }

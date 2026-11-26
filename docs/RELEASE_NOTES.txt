@@ -10,10 +10,13 @@ Nuevo:
 - [Sensitive] (Kitpymes.Core.Logger.Abstractions) para marcar propiedades que nunca se escriben, y SensitiveDataNames.IsSensitive(nombre).
 
 Datos sensibles (también con la API antigua, ILoggerService):
-- Antes de llegar a cualquier sink (consola, fichero, email, SQL Server), cada evento pasa por la ocultación: propiedades y miembros de objetos, diccionarios y listas cuyo nombre es de credencial, miembros con [Sensitive] (al desestructurar, {@Objeto}), y en el texto (también el de la plantilla del mensaje): valores de claves JSON, clave=valor y clave: valor (ToString de un record, cadenas de conexión, parámetros de URL), Bearer y contraseñas en URL. El valor sale como ***.
-- Nombres de credencial: por palabras (Password, UserPassword, user_password, Contraseña, contrasenya, ClaveAcceso, Pwd, ApiKey, api_key, ConnectionString, ClientSecret, AccessToken, Authorization, Cookie, CreditCard, CardNumber, Cvv, Iban, Pin, Otp, PrivateKey, Credentials...). CancellationToken o Secretaria no lo son.
-- Si ocultar falla, el evento no se escribe tal cual: se escribe "Evento descartado: no se pudieron ocultar los datos sensibles".
-- NO cubre: datos personales (DNI, correo, teléfono) salvo con [Sensitive]; los mensajes de las excepciones; un objeto con un ToString() propio que no tenga forma clave=valor; texto libre sin clave ("la contraseña es x"). No interpolar datos en el mensaje: usar plantillas ({Usuario}) y activar CA2254 en el proyecto.
+- Antes de llegar a cualquier sink (consola, fichero, email, SQL Server), cada evento pasa por la ocultación: propiedades y miembros de objetos, diccionarios y listas cuyo nombre es de credencial, miembros con [Sensitive] (al desestructurar, {@Objeto}; también si una clase derivada sobrescribe la propiedad), y en el texto: valores de claves JSON y XML, clave=valor y clave: valor (ToString de un record, cadenas de conexión, parámetros de URL, también entre comillas), Bearer y contraseñas en URL (también en una Uri). El valor sale como ***.
+- El texto de la plantilla del mensaje se revisa, pero sus huecos no cambian (la plantilla sigue agrupando los eventos). El valor de un hueco que va detrás de una clave sensible ("pwd={Valor}", "Token: {TokenId}") se oculta aunque su nombre no lo sea.
+- Con ILogger<T>, los scopes (BeginScope) también: sus valores y el texto que Serilog guarda en Scope.
+- Nombres de credencial: por palabras (Password, UserPassword, user_password, Contraseña, contrasenya, ClaveAcceso, Pwd, UserPass, ApiKey, api_key, ConnectionString, ClientSecret, clientsecret, AccessToken, accesstoken, Authorization, Cookie, CreditCard, CardNumber, Cvv, Iban, Pin, Otp, PrivateKey, AccountKey, sig, Credentials...). CancellationToken, ByPass o Secretaria no lo son.
+- Si ocultar falla, el evento no se escribe tal cual: se escribe "Evento descartado: no se pudieron ocultar los datos sensibles". Un texto muy grande no lo provoca: se recorre en tiempo lineal y, si aun así se pasa del tiempo, ese texto sale entero como ***.
+- NO cubre: datos personales (DNI, correo, teléfono) salvo con [Sensitive]; los mensajes de las excepciones; tuplas y KeyValuePair sueltos; un objeto con un ToString() propio que no tenga forma clave=valor; texto libre sin clave ("la contraseña es x"). No interpolar datos en el mensaje: usar plantillas ({Usuario}) y activar CA2254 en el proyecto.
+- Oculta de más a propósito: tras "token:", "clave:" o "pass:" en un texto, hasta el final de la frase.
 
 Obsoletos (avisos con su código; se eliminan en la 3.0.0):
 - KPY0009: ILogger e ILoggerService de Kitpymes.Core.Logger.Abstractions y SerilogProvider. Sustituto: ILogger<T> de Microsoft.Extensions.Logging, registrado con AddKitpymesLogging o AddKitpymesSerilog.
@@ -23,7 +26,9 @@ Obsoletos (avisos con su código; se eliminan en la 3.0.0):
 
 CAMBIOS DE COMPORTAMIENTO:
 - La ocultación de datos sensibles también actúa con ILoggerService: lo que antes se escribía en claro sale como ***. Puede ocultar de más (cualquier "token: x" en un texto).
-- Kitpymes.Core.Logger.Serilog depende de Serilog.Extensions.Logging 10.0.0 (y de Microsoft.Extensions.Logging 10.0.0).
+- Kitpymes.Core.Logger.Serilog depende de Serilog.Extensions.Logging 10.0.0, que pide Serilog 4.2.0 o superior y Microsoft.Extensions.Logging 10.0.0: quien fije una versión anterior de Serilog verá NU1605.
+- AddKitpymesSerilog y AddKitpymesLogging registran Serilog una sola vez aunque se llamen varias.
+- Un nivel que no existe en MinimumLevelOverride ("Warnig") lanza ArgumentException al crear el logger.
 - Con AddKitpymesSerilog, el nivel lo decide Serilog (MinimumLevel y MinimumLevelOverride); las reglas Logging:LogLevel no lo filtran. No quita los demás proveedores: si la aplicación tiene también la consola de Microsoft, cada evento sale dos veces (builder.Logging.ClearProviders() antes, para dejar sólo Serilog).
 
 # v.2.2.0

@@ -7,6 +7,8 @@
 
 namespace Kitpymes.Core.Logger.Abstractions;
 
+using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -17,10 +19,11 @@ using System.Text;
 /// </summary>
 /// <remarks>
 /// <para>Se compara por palabras, no por "contiene": el nombre se parte en palabras (mayúsculas, <c>_</c>, <c>-</c>,
-/// espacios, puntos), sin tildes y en minúsculas. Es sensible si alguna palabra es de credencial (password, pass,
-/// pwd, contraseña, contrasenya, clave, clau, secret, token, pin, otp, cvv, cvc, iban, authorization, bearer,
-/// cookie, apikey, credential…) o si contiene dos seguidas como api key, connection string, credit card,
-/// card number, private key, access key o cadena conexión.</para>
+/// espacios, puntos), sin tildes y en minúsculas. Es sensible si alguna palabra es de credencial (password, pwd,
+/// contraseña, contrasenya, clave, clau, secret, token, pin, otp, cvv, cvc, iban, authorization, bearer, cookie,
+/// apikey, accesstoken, clientsecret, accountkey, sig, credential…), si acaba en <c>pass</c> (salvo <c>ByPass</c>) o si
+/// contiene dos seguidas como api key, connection string, credit card, card number, private key, access key,
+/// account key o cadena conexión.</para>
 /// <para><c>CancellationToken</c> no es sensible. <c>Secretaria</c> tampoco: <c>secretaria</c> no es la palabra <c>secret</c>.</para>
 /// <para>Cubre credenciales y secretos; no datos personales (DNI, correo, teléfono).</para>
 /// </remarks>
@@ -33,15 +36,19 @@ public static class SensitiveDataNames
 
     private static readonly HashSet<string> Words = new HashSet<string>
     {
-        "password", "passwd", "pass", "passphrase", "pwd", "contrasena", "contrasenya", "clave", "clau",
+        "password", "passwd", "passphrase", "pwd", "contrasena", "contrasenya", "clave", "clau",
         "secret", "secrets", "secreto", "token", "tokens", "pin", "otp", "cvv", "cvc", "iban",
         "authorization", "bearer", "cookie", "cookies", "apikey", "connectionstring", "credential", "credentials",
+        "accesstoken", "refreshtoken", "idtoken", "clientsecret", "privatekey", "accountkey", "secretkey", "sig",
+        "sharedaccesskey", "sharedaccesssignature",
     };
+
+    private static readonly ConcurrentDictionary<string, bool> Cache = new ConcurrentDictionary<string, bool>(StringComparer.Ordinal);
 
     private static readonly (string First, string Second)[] Pairs =
     {
         ("api", "key"), ("connection", "string"), ("credit", "card"), ("card", "number"),
-        ("private", "key"), ("access", "key"), ("secret", "key"), ("cadena", "conexion"),
+        ("private", "key"), ("access", "key"), ("secret", "key"), ("account", "key"), ("cadena", "conexion"),
     };
 
     /// <summary>
@@ -56,7 +63,29 @@ public static class SensitiveDataNames
             return false;
         }
 
-        var words = Split(name);
+        if (Cache.TryGetValue(name, out var cached))
+        {
+            return cached;
+        }
+
+        var sensitive = Check(Split(name));
+
+        // Los nombres de propiedades se repiten; el texto libre no se guarda (sólo nombres cortos y hasta un tope).
+        if (name.Length <= 100 && Cache.Count < 10000)
+        {
+            Cache.TryAdd(name, sensitive);
+        }
+
+        return sensitive;
+    }
+
+    private static bool Check(List<string> words)
+    {
+        // "pass" sola o al final (UserPass, db_pass), pero no ByPass.
+        if (words.Count > 0 && words[words.Count - 1] == "pass" && (words.Count == 1 || words[words.Count - 2] != "by"))
+        {
+            return true;
+        }
 
         for (var i = 0; i < words.Count; i++)
         {

@@ -8,8 +8,10 @@
 namespace Kitpymes.Core.Logger.Serilog;
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 using global::Serilog.Events;
 using global::Serilog.Parsing;
@@ -18,34 +20,48 @@ using Kitpymes.Core.Logger.Abstractions;
 /// <summary>
 /// Oculta los datos sensibles de un evento: propiedades, objetos, diccionarios, listas y texto (también el de la plantilla).
 /// </summary>
+/// <remarks>
+/// Las expresiones sólo buscan dónde empieza una clave; el valor se recorre a mano, en tiempo lineal. Si aun así una
+/// expresión agota su tiempo, se oculta el texto entero (nunca se escribe sin revisar).
+/// </remarks>
 internal static class SensitiveDataMasker
 {
+    private const int MaxCachedTemplates = 1000;
+
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(1);
 
     private static readonly MessageTemplateParser Parser = new MessageTemplateParser();
 
     private static readonly ScalarValue MaskValue = new ScalarValue(SensitiveDataNames.Mask);
 
-    // "clave": valor (JSON, y también con comillas simples).
-    private static readonly Regex QuotedPair = new Regex(
-        @"(?<q>[""'])(?<key>[^""'\r\n]{1,100})\k<q>(?<sep>\s*:\s*)(?<value>""(?:[^""\\]|\\.)*""|'(?:[^'\\]|\\.)*'|[^,}\]\r\n]+)",
+    private static readonly ConcurrentDictionary<string, MaskedTemplate> Templates = new ConcurrentDictionary<string, MaskedTemplate>(StringComparer.Ordinal);
+
+    // "clave": (JSON, y también con comillas simples). El valor lo recorre ScanQuotedValue.
+    private static readonly Regex QuotedKey = new Regex(
+        @"(?<q>[""'])(?<key>[^""'\r\n]{1,100})\k<q>\s*:\s*",
         RegexOptions.CultureInvariant,
         Timeout);
 
-    // clave = valor y clave: valor (ToString de un record, cadenas de conexión, parámetros de una URL). El valor acaba
-    // en , ; & } ] o fin de línea, o donde empieza otra clave (usuario=a clave=b); "://" no es un separador.
-    private static readonly Regex Assignment = new Regex(
-        @"(?<key>[\p{L}\p{N}_\-]{1,100})(?<sep>\s*(?:=|:(?!//))\s*)(?<value>[^,;&}\]\s\r\n](?:(?!\s+[\p{L}\p{N}_\-]{1,100}\s*(?:=|:(?!//)))[^,;&}\]\r\n])*)",
+    // clave= o clave: al principio de una palabra (ToString de un record, cadenas de conexión, URL); "://" no cuenta.
+    private static readonly Regex AssignmentKey = new Regex(
+        @"(?<![\p{L}\p{N}_\-])(?<key>[\p{L}\p{N}_\-]{1,100})\s*(?:=|:(?!//))[ \t]*",
+        RegexOptions.CultureInvariant,
+        Timeout);
+
+    // <clave>valor</clave>
+    private static readonly Regex XmlKey = new Regex(
+        @"<(?<key>[\p{L}\p{N}_\-]{1,100})>",
         RegexOptions.CultureInvariant,
         Timeout);
 
     private static readonly Regex Bearer = new Regex(
-        @"(?<=\bbearer\s+)[A-Za-z0-9\-._~+/]+=*",
+        @"(?<![\p{L}\p{N}])bearer\s+",
         RegexOptions.CultureInvariant | RegexOptions.IgnoreCase,
         Timeout);
 
-    private static readonly Regex UrlPassword = new Regex(
-        @"(?<=://[^/\s:@]+:)[^/\s@]+(?=@)",
+    // Clave justo antes de un hueco de la plantilla: "pwd={Valor}" oculta Valor aunque su nombre no sea sensible.
+    private static readonly Regex KeyAtEnd = new Regex(
+        @"(?<![\p{L}\p{N}_\-])(?<key>[\p{L}\p{N}_\-]{1,100})\s*(?:=|:)\s*$",
         RegexOptions.CultureInvariant,
         Timeout);
 
@@ -56,23 +72,15 @@ internal static class SensitiveDataMasker
     /// <returns>El evento sin datos sensibles.</returns>
     internal static LogEvent Mask(LogEvent logEvent)
     {
-        var changed = false;
-
-        var text = logEvent.MessageTemplate.Text;
-        var maskedText = MaskText(text);
-        var template = logEvent.MessageTemplate;
-
-        if (!string.Equals(text, maskedText, StringComparison.Ordinal))
-        {
-            template = Parser.Parse(maskedText);
-            changed = true;
-        }
-
+        var template = MaskTemplate(logEvent.MessageTemplate);
+        var changed = !ReferenceEquals(template.Template, logEvent.MessageTemplate);
         var properties = new List<LogEventProperty>(logEvent.Properties.Count);
 
         foreach (var property in logEvent.Properties)
         {
-            var value = SensitiveDataNames.IsSensitive(property.Key) ? MaskValue : Mask(property.Value);
+            var value = SensitiveDataNames.IsSensitive(property.Key) || template.MaskedProperties.Contains(property.Key)
+                ? MaskValue
+                : Mask(property.Value);
 
             changed |= !ReferenceEquals(value, property.Value);
 
@@ -80,7 +88,7 @@ internal static class SensitiveDataMasker
         }
 
         return changed
-            ? new LogEvent(logEvent.Timestamp, logEvent.Level, logEvent.Exception, template, properties, logEvent.TraceId ?? default, logEvent.SpanId ?? default)
+            ? new LogEvent(logEvent.Timestamp, logEvent.Level, logEvent.Exception, template.Template, properties, logEvent.TraceId ?? default, logEvent.SpanId ?? default)
             : logEvent;
     }
 
@@ -88,7 +96,7 @@ internal static class SensitiveDataMasker
     /// Oculta los valores sensibles de un texto.
     /// </summary>
     /// <param name="text">Texto.</param>
-    /// <returns>El texto con los valores sensibles sustituidos por <c>***</c>.</returns>
+    /// <returns>El texto con los valores sensibles sustituidos por <c>***</c>; <c>***</c> entero si no se pudo revisar a tiempo.</returns>
     internal static string MaskText(string text)
     {
         if (string.IsNullOrEmpty(text))
@@ -96,20 +104,326 @@ internal static class SensitiveDataMasker
             return text;
         }
 
-        var masked = QuotedPair.Replace(text, match => SensitiveDataNames.IsSensitive(match.Groups["key"].Value)
-            ? match.Groups["q"].Value + match.Groups["key"].Value + match.Groups["q"].Value + match.Groups["sep"].Value + "\"" + SensitiveDataNames.Mask + "\""
-            : match.Value);
-
-        masked = Assignment.Replace(masked, match => SensitiveDataNames.IsSensitive(match.Groups["key"].Value)
-            ? match.Groups["key"].Value + match.Groups["sep"].Value + SensitiveDataNames.Mask + TrailingSpaces(match.Groups["value"].Value)
-            : match.Value);
-
-        masked = Bearer.Replace(masked, SensitiveDataNames.Mask);
-
-        return UrlPassword.Replace(masked, SensitiveDataNames.Mask);
+        try
+        {
+            var masked = MaskQuoted(text);
+            masked = MaskAssignments(masked);
+            masked = MaskXml(masked);
+            masked = MaskBearer(masked);
+            return MaskUrlPasswords(masked);
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return SensitiveDataNames.Mask;
+        }
     }
 
-    private static string TrailingSpaces(string value) => value.Substring(value.TrimEnd().Length);
+    private static MaskedTemplate MaskTemplate(MessageTemplate template)
+    {
+        if (Templates.TryGetValue(template.Text, out var cached))
+        {
+            return cached;
+        }
+
+        var masked = BuildMaskedTemplate(template);
+
+        if (Templates.Count < MaxCachedTemplates)
+        {
+            Templates.TryAdd(template.Text, masked);
+        }
+
+        return masked;
+    }
+
+    // Sólo se tocan los trozos de texto: los huecos se quedan igual, para que la plantilla siga agrupando los eventos.
+    private static MaskedTemplate BuildMaskedTemplate(MessageTemplate template)
+    {
+        var text = new StringBuilder(template.Text.Length);
+        var maskedProperties = new HashSet<string>(StringComparer.Ordinal);
+        var changed = false;
+        var keyBeforeHole = false;
+
+        foreach (var token in template.Tokens)
+        {
+            if (token is TextToken textToken)
+            {
+                var masked = MaskText(textToken.Text);
+                changed |= !string.Equals(masked, textToken.Text, StringComparison.Ordinal);
+                keyBeforeHole = EndsWithSensitiveKey(masked);
+
+                // Las llaves del texto se escribieron dobladas ({{ }}) en la plantilla original.
+                text.Append(masked.Replace("{", "{{", StringComparison.Ordinal).Replace("}", "}}", StringComparison.Ordinal));
+            }
+            else
+            {
+                if (keyBeforeHole && token is PropertyToken propertyToken)
+                {
+                    maskedProperties.Add(propertyToken.PropertyName);
+                }
+
+                keyBeforeHole = false;
+                text.Append(token.ToString());
+            }
+        }
+
+        return new MaskedTemplate(changed ? Parser.Parse(text.ToString()) : template, maskedProperties);
+    }
+
+    private static bool EndsWithSensitiveKey(string text)
+    {
+        try
+        {
+            var match = KeyAtEnd.Match(text);
+            return match.Success && SensitiveDataNames.IsSensitive(match.Groups["key"].Value);
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return true;
+        }
+    }
+
+    private static string MaskQuoted(string text)
+    {
+        var result = new StringBuilder(text.Length);
+        var position = 0;
+
+        foreach (Match match in QuotedKey.Matches(text))
+        {
+            if (match.Index < position || !SensitiveDataNames.IsSensitive(match.Groups["key"].Value))
+            {
+                continue;
+            }
+
+            var start = match.Index + match.Length;
+            var end = ScanQuotedValue(text, start);
+            result.Append(text, position, start - position).Append('"').Append(SensitiveDataNames.Mask).Append('"');
+            position = end;
+        }
+
+        return position == 0 ? text : result.Append(text, position, text.Length - position).ToString();
+    }
+
+    private static string MaskAssignments(string text)
+    {
+        var result = new StringBuilder(text.Length);
+        var position = 0;
+
+        foreach (Match match in AssignmentKey.Matches(text))
+        {
+            if (match.Index < position || !SensitiveDataNames.IsSensitive(match.Groups["key"].Value))
+            {
+                continue;
+            }
+
+            var start = match.Index + match.Length;
+            var end = ScanAssignedValue(text, start);
+
+            if (end == start)
+            {
+                continue;
+            }
+
+            result.Append(text, position, start - position).Append(SensitiveDataNames.Mask);
+            position = end;
+        }
+
+        return position == 0 ? text : result.Append(text, position, text.Length - position).ToString();
+    }
+
+    private static string MaskXml(string text)
+    {
+        var result = new StringBuilder(text.Length);
+        var position = 0;
+
+        foreach (Match match in XmlKey.Matches(text))
+        {
+            var key = match.Groups["key"].Value;
+
+            if (match.Index < position || !SensitiveDataNames.IsSensitive(key))
+            {
+                continue;
+            }
+
+            var start = match.Index + match.Length;
+            var end = text.IndexOf("</" + key + ">", start, StringComparison.Ordinal);
+
+            if (end < 0)
+            {
+                continue;
+            }
+
+            result.Append(text, position, start - position).Append(SensitiveDataNames.Mask);
+            position = end;
+        }
+
+        return position == 0 ? text : result.Append(text, position, text.Length - position).ToString();
+    }
+
+    private static string MaskBearer(string text)
+    {
+        var result = new StringBuilder(text.Length);
+        var position = 0;
+
+        foreach (Match match in Bearer.Matches(text))
+        {
+            var start = match.Index + match.Length;
+            var end = start;
+
+            while (end < text.Length && (char.IsLetterOrDigit(text[end]) || "-._~+/=".Contains(text[end], StringComparison.Ordinal)))
+            {
+                end++;
+            }
+
+            if (match.Index < position || end == start)
+            {
+                continue;
+            }
+
+            result.Append(text, position, start - position).Append(SensitiveDataNames.Mask);
+            position = end;
+        }
+
+        return position == 0 ? text : result.Append(text, position, text.Length - position).ToString();
+    }
+
+    // esquema://usuario:contraseña@servidor
+    private static string MaskUrlPasswords(string text)
+    {
+        var result = new StringBuilder(text.Length);
+        var position = 0;
+        var scheme = text.IndexOf("://", StringComparison.Ordinal);
+
+        while (scheme >= 0)
+        {
+            var start = scheme + 3;
+            var end = start;
+
+            while (end < text.Length && text[end] != '@' && text[end] != '/' && !char.IsWhiteSpace(text[end]))
+            {
+                end++;
+            }
+
+            var colon = text.IndexOf(':', start, end - start);
+
+            if (end < text.Length && text[end] == '@' && colon > start)
+            {
+                result.Append(text, position, colon + 1 - position).Append(SensitiveDataNames.Mask);
+                position = end;
+            }
+
+            scheme = text.IndexOf("://", end, StringComparison.Ordinal);
+        }
+
+        return position == 0 ? text : result.Append(text, position, text.Length - position).ToString();
+    }
+
+    // Valor JSON: una cadena entre comillas (con \ de escape) o lo que haya hasta , } ] o fin de línea.
+    private static int ScanQuotedValue(string text, int start)
+    {
+        if (start < text.Length && (text[start] == '"' || text[start] == '\''))
+        {
+            var quote = text[start];
+            var i = start + 1;
+
+            while (i < text.Length && text[i] != quote)
+            {
+                i += text[i] == '\\' ? 2 : 1;
+            }
+
+            return Math.Min(i + 1, text.Length);
+        }
+
+        var end = start;
+
+        while (end < text.Length && ",}]\r\n".IndexOf(text[end], StringComparison.Ordinal) < 0)
+        {
+            end++;
+        }
+
+        return end;
+    }
+
+    // Valor de clave=valor: entre comillas (con '' o "" doblados) o hasta ; & } ] fin de línea, ", " (como en un
+    // record) o el espacio que precede a otra clave (usuario=a clave=b). Los espacios del final no se cuentan.
+    private static int ScanAssignedValue(string text, int start)
+    {
+        if (start < text.Length && (text[start] == '"' || text[start] == '\''))
+        {
+            var quote = text[start];
+            var i = start + 1;
+
+            while (i < text.Length)
+            {
+                if (text[i] == quote)
+                {
+                    if (i + 1 < text.Length && text[i + 1] == quote)
+                    {
+                        i += 2;
+                        continue;
+                    }
+
+                    return i + 1;
+                }
+
+                i++;
+            }
+
+            return text.Length;
+        }
+
+        var end = start;
+
+        while (end < text.Length)
+        {
+            var c = text[end];
+
+            if (";&}]\r\n".IndexOf(c, StringComparison.Ordinal) >= 0
+                || (c == ',' && end + 1 < text.Length && char.IsWhiteSpace(text[end + 1]))
+                || (char.IsWhiteSpace(c) && StartsKey(text, end)))
+            {
+                break;
+            }
+
+            end++;
+        }
+
+        while (end > start && char.IsWhiteSpace(text[end - 1]))
+        {
+            end--;
+        }
+
+        return end;
+    }
+
+    // ¿Empieza otra clave (palabra seguida de = o :) después de estos espacios?
+    private static bool StartsKey(string text, int index)
+    {
+        var i = index;
+
+        while (i < text.Length && char.IsWhiteSpace(text[i]))
+        {
+            i++;
+        }
+
+        var wordStart = i;
+
+        while (i < text.Length && i - wordStart <= 100 && (char.IsLetterOrDigit(text[i]) || text[i] == '_' || text[i] == '-'))
+        {
+            i++;
+        }
+
+        if (i == wordStart)
+        {
+            return false;
+        }
+
+        while (i < text.Length && (text[i] == ' ' || text[i] == '\t'))
+        {
+            i++;
+        }
+
+        return i < text.Length && (text[i] == '=' || (text[i] == ':' && !(i + 2 < text.Length && text[i + 1] == '/' && text[i + 2] == '/')));
+    }
 
     private static LogEventPropertyValue Mask(LogEventPropertyValue value)
     {
@@ -118,6 +432,12 @@ internal static class SensitiveDataMasker
             case ScalarValue { Value: string text }:
                 var masked = MaskText(text);
                 return string.Equals(masked, text, StringComparison.Ordinal) ? value : new ScalarValue(masked);
+
+            // Uri y otros escalares que no son de valor: se revisa su texto (una Uri con contraseña o ?token=).
+            case ScalarValue { Value: { } other } when other is not ValueType:
+                var otherText = other.ToString() ?? string.Empty;
+                var maskedOther = MaskText(otherText);
+                return string.Equals(maskedOther, otherText, StringComparison.Ordinal) ? value : new ScalarValue(maskedOther);
 
             case StructureValue structure:
                 var members = structure.Properties
@@ -147,4 +467,11 @@ internal static class SensitiveDataMasker
                 return value;
         }
     }
+
+    /// <summary>
+    /// Plantilla con el texto revisado y los huecos que van detrás de una clave sensible.
+    /// </summary>
+    /// <param name="Template">Plantilla (la misma si no ha cambiado).</param>
+    /// <param name="MaskedProperties">Propiedades que se ocultan por ir detrás de una clave sensible.</param>
+    private sealed record MaskedTemplate(MessageTemplate Template, HashSet<string> MaskedProperties);
 }
