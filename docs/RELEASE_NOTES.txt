@@ -1,3 +1,31 @@
+# v.2.3.0
+Versión menor: añade la API nueva (ILogger<T> de Microsoft.Extensions.Logging con Serilog), oculta los datos sensibles y marca obsoleto lo que la 3.0.0 quita. No quita nada. Cambia el comportamiento (abajo).
+
+Nuevo:
+- builder.Logging.AddKitpymesLogging(configuration) (Kitpymes.Core.Logger): lee la sección LoggerSettings igual que LoadLogger (Enabled, IsSerilogEnabled, SerilogSettings) y registra Serilog como proveedor de ILogger<T>. También AddKitpymesLogging(o => o.UseSerilog(...)) y AddKitpymesLogging(LoggerSettings).
+- builder.Logging.AddKitpymesSerilog(SerilogSettings) y AddKitpymesSerilog(o => ...) (Kitpymes.Core.Logger.Serilog). El logger de Serilog se crea al pedir el primer ILogger y lo libera el contenedor.
+- KitpymesSerilog.CreateLoggerFactory(...): ILoggerFactory para el arranque, antes de tener el contenedor (using var factory = ...; factory.CreateLogger<Program>()). Y KitpymesSerilog.CreateLogger(SerilogSettings) si se quiere el logger de Serilog.
+- SerilogSettings.MinimumLevelOverride: nivel mínimo por categoría ("Microsoft.AspNetCore": "Warning"). Si no se indica, Microsoft y System quedan en Warning.
+- {Title} sigue funcionando con ILogger<T>: se toma del nombre corto de la categoría (RequestDataBehaviour de App.RequestDataBehaviour<A, B>).
+- [Sensitive] (Kitpymes.Core.Logger.Abstractions) para marcar propiedades que nunca se escriben, y SensitiveDataNames.IsSensitive(nombre).
+
+Datos sensibles (también con la API antigua, ILoggerService):
+- Antes de llegar a cualquier sink (consola, fichero, email, SQL Server), cada evento pasa por la ocultación: propiedades y miembros de objetos, diccionarios y listas cuyo nombre es de credencial, miembros con [Sensitive] (al desestructurar, {@Objeto}), y en el texto (también el de la plantilla del mensaje): valores de claves JSON, clave=valor y clave: valor (ToString de un record, cadenas de conexión, parámetros de URL), Bearer y contraseñas en URL. El valor sale como ***.
+- Nombres de credencial: por palabras (Password, UserPassword, user_password, Contraseña, contrasenya, ClaveAcceso, Pwd, ApiKey, api_key, ConnectionString, ClientSecret, AccessToken, Authorization, Cookie, CreditCard, CardNumber, Cvv, Iban, Pin, Otp, PrivateKey, Credentials...). CancellationToken o Secretaria no lo son.
+- Si ocultar falla, el evento no se escribe tal cual: se escribe "Evento descartado: no se pudieron ocultar los datos sensibles".
+- NO cubre: datos personales (DNI, correo, teléfono) salvo con [Sensitive]; los mensajes de las excepciones; un objeto con un ToString() propio que no tenga forma clave=valor; texto libre sin clave ("la contraseña es x"). No interpolar datos en el mensaje: usar plantillas ({Usuario}) y activar CA2254 en el proyecto.
+
+Obsoletos (avisos con su código; se eliminan en la 3.0.0):
+- KPY0009: ILogger e ILoggerService de Kitpymes.Core.Logger.Abstractions y SerilogProvider. Sustituto: ILogger<T> de Microsoft.Extensions.Logging, registrado con AddKitpymesLogging o AddKitpymesSerilog.
+- KPY0010: Log (Log.UseSerilog). Sustituto: KitpymesSerilog.CreateLoggerFactory.
+- KPY0011: LoggerServiceCollectionExtensions (services.LoadLogger) y SerilogServiceCollectionExtensions (services.LoadSerilog). Sustituto: builder.Logging.AddKitpymesLogging(...) o AddKitpymesSerilog(...).
+- Aviso para la 3.0.0: Kitpymes.Core.Shared y el FrameworkReference de ASP.NET Core dejarán de llegar a través de Logger. Quien los use sin referenciarlos tiene que añadirlos en su proyecto.
+
+CAMBIOS DE COMPORTAMIENTO:
+- La ocultación de datos sensibles también actúa con ILoggerService: lo que antes se escribía en claro sale como ***. Puede ocultar de más (cualquier "token: x" en un texto).
+- Kitpymes.Core.Logger.Serilog depende de Serilog.Extensions.Logging 10.0.0 (y de Microsoft.Extensions.Logging 10.0.0).
+- Con AddKitpymesSerilog, el nivel lo decide Serilog (MinimumLevel y MinimumLevelOverride); las reglas Logging:LogLevel no lo filtran. No quita los demás proveedores: si la aplicación tiene también la consola de Microsoft, cada evento sale dos veces (builder.Logging.ClearProviders() antes, para dejar sólo Serilog).
+
 # v.2.2.0
 Versión menor: corrige el ciclo de vida del logger de Serilog sin cambiar la API pública (sólo añade IDisposable a SerilogProvider). Cambia el comportamiento (abajo).
 
