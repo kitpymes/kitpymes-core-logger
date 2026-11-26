@@ -253,6 +253,8 @@ namespace Kitpymes.Core.Logger.Serilog.Tests
         [TestMethod]
         [DataRow("Warn")]
         [DataRow("Warning")]
+        [DataRow("warn")]
+        [DataRow("WARNING")]
         public void ToMinimumLevel_Warn_EsWarning(string nivel)
         {
             Assert.AreEqual(LogEventLevel.Warning, nivel.ToMinimumLevel());
@@ -270,6 +272,9 @@ namespace Kitpymes.Core.Logger.Serilog.Tests
         [DataRow("Info", LogEventLevel.Information)]
         [DataRow("Error", LogEventLevel.Error)]
         [DataRow("Fatal", LogEventLevel.Fatal)]
+        [DataRow("Verbose", LogEventLevel.Verbose)]
+        [DataRow("information", LogEventLevel.Information)]
+        [DataRow("error", LogEventLevel.Error)]
         [DataRow("otro", LogEventLevel.Information)]
         [DataRow(null, LogEventLevel.Information)]
         public void ToMinimumLevel_ConvierteLosDemasNiveles(string? nivel, LogEventLevel esperado)
@@ -316,10 +321,86 @@ namespace Kitpymes.Core.Logger.Serilog.Tests
             Assert.AreEqual(2, sink.Eventos.Count);
         }
 
+        [TestMethod]
+        public void Enrichers_AnadenSuPropiedadATodosLosEventos()
+        {
+            var enrichers = new ILogEventEnricher[] { new MachineNameEnricher(), new ProcessEnricher(), new ThreadEnricher() };
+            var primero = Evento();
+            var segundo = Evento();
+
+            foreach (var enricher in enrichers)
+            {
+                enricher.Enrich(primero, new FabricaDePropiedades());
+                enricher.Enrich(segundo, new FabricaDePropiedades());
+            }
+
+            foreach (var nombre in new[] { "MachineName", "Process", "Thread" })
+            {
+                Assert.IsTrue(primero.Properties.ContainsKey(nombre), "Primer evento sin " + nombre);
+                Assert.IsTrue(segundo.Properties.ContainsKey(nombre), "Segundo evento sin " + nombre);
+            }
+        }
+
+        [TestMethod]
+        public void CreateLogger_CadaEventoLlevaElNombreDeLaMaquina()
+        {
+            var service = new SerilogProvider(ConFichero());
+            var logger = service.CreateLogger("Maquina");
+
+            logger.Error("uno").Error("dos").Error("tres");
+            Liberar(service);
+
+            var eventos = LeerEventos();
+            Assert.AreEqual(3, eventos.Count);
+            Assert.IsTrue(eventos.All(e => e.GetProperty("MachineName").GetString() == Environment.MachineName));
+        }
+
+        [TestMethod]
+        public void Log_ConSqlServerCaido_NoLanzaAlQueLlama()
+        {
+            var settings = new SerilogSettings();
+            settings.SqlServer.Enabled = true;
+            settings.SqlServer.ConnectionString = "Server=127.0.0.1,1;Database=Log;User Id=u;Password=p;Connect Timeout=1;TrustServerCertificate=True";
+            var service = new SerilogProvider(settings);
+            var logger = service.CreateLogger("Sql");
+
+            logger.Error("la base de datos no responde");
+            Liberar(service);
+        }
+
+        [TestMethod]
+        public void AddDefaultSettings_NoSustituyeElSelfLogDeLaAplicacion()
+        {
+            var escrito = new StringWriter();
+            global::Serilog.Debugging.SelfLog.Enable(escrito);
+            try
+            {
+                _ = new LoggerConfiguration().AddDefaultSettings("SelfLog");
+                global::Serilog.Debugging.SelfLog.WriteLine("mensaje de la aplicacion");
+
+                StringAssert.Contains(escrito.ToString(), "mensaje de la aplicacion");
+            }
+            finally
+            {
+                global::Serilog.Debugging.SelfLog.Disable();
+            }
+        }
+
+        [TestMethod]
+        public void LoadLogger_ConUseSerilog_RegistraElLogger()
+        {
+            var services = new ServiceCollection();
+
+            services.LoadLogger(options => options.UseSerilog(_ => { }));
+
+            Assert.AreEqual(1, services.Count(d => d.ServiceType == typeof(ILoggerService)));
+        }
+
         private static LogEvent Evento() =>
             new(DateTimeOffset.Now, LogEventLevel.Information, null, MessageTemplate.Empty, Array.Empty<LogEventProperty>());
 
-        private static void Liberar(object service) => ((IDisposable)service).Dispose();
+        // Tolerante: contra 2.1.0 (sin IDisposable) los tests fallan por su comprobación, no por el cast.
+        private static void Liberar(object service) => (service as IDisposable)?.Dispose();
 
         private static string Mensaje(JsonElement evento) => evento.GetProperty("@mt").GetString() ?? string.Empty;
 
@@ -348,6 +429,12 @@ namespace Kitpymes.Core.Logger.Serilog.Tests
                 })
                 .Select(l => JsonDocument.Parse(l).RootElement.Clone())
                 .ToList();
+        }
+
+        private sealed class FabricaDePropiedades : ILogEventPropertyFactory
+        {
+            public LogEventProperty CreateProperty(string name, object? value, bool destructureObjects = false) =>
+                new(name, new ScalarValue(value));
         }
 
         private sealed class SinkEnMemoria : ILogEventSink
