@@ -9,11 +9,13 @@
   </ItemGroup>
 
   <ItemGroup>
-  </ItemGroup>  
+  </ItemGroup>
 
-  <PropertyGroup>
-    <!-- Obsoletos de la 2.3.0 (se quitan en la 3.0.0): la librería y sus pruebas los siguen usando. -->
-    <NoWarn>$(NoWarn);KPY0009;KPY0010;KPY0011</NoWarn>
-  </PropertyGroup>
+  <ItemGroup>
+    <!-- Desde la 3.0.0 no usa ASP.NET Core: Common.Build.props lo mete en todos los proyectos y un FrameworkReference
+         llega a quien instala el paquete. -->
+    <FrameworkReference Remove="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.0" />
+  </ItemGroup>
 
 </Project>

@@ -9,7 +9,6 @@ namespace Kitpymes.Core.Logger.Serilog;
 
 using global::Serilog.Core;
 using global::Serilog.Events;
-using Kitpymes.Core.Shared.Extensions;
 
 /*
     Clase para enriquecer el logeo de errores ProcessEnricher
@@ -41,13 +40,6 @@ public class ProcessEnricher : ILogEventEnricher
     {
         using var process = System.Diagnostics.Process.GetCurrentProcess();
 
-        var processValue = process.Id > 0 ? process.Id.ToStringFormat() : string.Empty;
-
-        if (!string.IsNullOrWhiteSpace(process.ProcessName))
-        {
-            processValue += process.Id > 0 ? $" - {process.ProcessName}" : process.ProcessName;
-        }
-
-        return processValue;
+        return $"{process.Id.ToString(System.Globalization.CultureInfo.CurrentCulture)} - {process.ProcessName}";
     }
 }

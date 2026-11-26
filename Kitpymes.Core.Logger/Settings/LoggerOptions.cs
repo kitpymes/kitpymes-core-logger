@@ -9,7 +9,6 @@ namespace Kitpymes.Core.Logger;
 
 using System;
 using Kitpymes.Core.Logger.Serilog;
-using Kitpymes.Core.Shared.Extensions;
 
 /*
   Clase de opciones LoggerOptions
@@ -37,7 +36,9 @@ public class LoggerOptions
     /// <returns>La clase LoggerOptions.</returns>
     public LoggerOptions UseSerilog(Action<SerilogOptions> options)
     {
-        var settings = options.ToConfigureOrDefault().SerilogSettings;
+        var serilogOptions = new SerilogOptions();
+        options?.Invoke(serilogOptions);
+        var settings = serilogOptions.SerilogSettings;
 
         LoggerSettings.SerilogSettings = settings;
 

@@ -9,7 +9,6 @@ namespace Kitpymes.Core.Logger.Serilog;
 
 using global::Serilog;
 using global::Serilog.Configuration;
-using Kitpymes.Core.Shared.Extensions;
 
 /*
     Clase de extensión SerilogEnrichersExtensions
@@ -31,7 +30,7 @@ public static class SerilogEnrichersExtensions
     /// <param name="enrichmentConfiguration">Controla la configuración de las propiedades.</param>
     /// <returns>La clase LoggerConfiguration.</returns>
     public static LoggerConfiguration WithThread(this LoggerEnrichmentConfiguration enrichmentConfiguration)
-    => enrichmentConfiguration.ToThrowIfNullOrEmpty().With<ThreadEnricher>();
+    => Guard.NotNull(enrichmentConfiguration).With<ThreadEnricher>();
 
     /// <summary>
     /// Agrega una propiedad con el nombre de la máquina.
@@ -39,7 +38,7 @@ public static class SerilogEnrichersExtensions
     /// <param name="enrichmentConfiguration">Controla la configuración de las propiedades.</param>
     /// <returns>La clase LoggerConfiguration.</returns>
     public static LoggerConfiguration WithMachineName(this LoggerEnrichmentConfiguration enrichmentConfiguration)
-        => enrichmentConfiguration.ToThrowIfNullOrEmpty().With<MachineNameEnricher>();
+        => Guard.NotNull(enrichmentConfiguration).With<MachineNameEnricher>();
 
     /// <summary>
     /// Agrega una propiedad con el id y el nombre del proceso.
@@ -47,7 +46,7 @@ public static class SerilogEnrichersExtensions
     /// <param name="enrichmentConfiguration">Controla la configuración de las propiedades.</param>
     /// <returns>La clase LoggerConfiguration.</returns>
     public static LoggerConfiguration WithProcess(this LoggerEnrichmentConfiguration enrichmentConfiguration)
-    => enrichmentConfiguration.ToThrowIfNullOrEmpty().With<ProcessEnricher>();
+    => Guard.NotNull(enrichmentConfiguration).With<ProcessEnricher>();
 
     /// <summary>
     /// Agrega una propiedad con el título del log.
@@ -56,5 +55,5 @@ public static class SerilogEnrichersExtensions
     /// <param name="title">El título del log.</param>
     /// <returns>La clase LoggerConfiguration.</returns>
     public static LoggerConfiguration WithTitle(this LoggerEnrichmentConfiguration enrichmentConfiguration, string title)
-    => enrichmentConfiguration.ToThrowIfNullOrEmpty().With(new TitleEnricher(title));
+    => Guard.NotNull(enrichmentConfiguration).With(new TitleEnricher(title));
 }
