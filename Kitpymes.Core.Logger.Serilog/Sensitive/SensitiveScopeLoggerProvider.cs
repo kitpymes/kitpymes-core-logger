@@ -25,11 +25,12 @@ using ILogger = Microsoft.Extensions.Logging.ILogger;
 /// <para>Serilog.Extensions.Logging guarda en la propiedad <c>Scope</c> el texto ya formateado del scope
 /// (<c>BeginScope("Usuario {Pwd}", pwd)</c> → <c>"Usuario s3cr3t"</c>): sin clave, el sink no lo puede ocultar.
 /// Aquí se cambia el estado del scope antes de que llegue a Serilog.</para>
-/// <para>No implementa <c>ISupportExternalScope</c> a propósito: así Microsoft.Extensions.Logging llama a este
-/// <c>BeginScope</c> en vez de guardar el scope por su cuenta.</para>
+/// <para>Con <c>ISupportExternalScope</c> (lo normal con <c>LoggerFactory</c>), los scopes los guarda
+/// Microsoft.Extensions.Logging, junto con los de <c>ActivityTrackingOptions</c> (TraceId, SpanId…): Serilog los recibe
+/// a través de un proveedor de scopes envuelto que los entrega ya ocultos.</para>
 /// </remarks>
 [ProviderAlias("Serilog")]
-internal sealed class SensitiveScopeLoggerProvider : ILoggerProvider
+internal sealed class SensitiveScopeLoggerProvider : ILoggerProvider, ISupportExternalScope
 {
     private readonly ILoggerProvider inner;
 
@@ -55,6 +56,49 @@ internal sealed class SensitiveScopeLoggerProvider : ILoggerProvider
     public void Dispose() => this.inner.Dispose();
 
     /// <summary>
+    /// Pasa a Serilog el proveedor de scopes de Microsoft.Extensions.Logging, envuelto para ocultar los datos sensibles.
+    /// </summary>
+    /// <param name="scopeProvider">Proveedor de scopes.</param>
+    public void SetScopeProvider(IExternalScopeProvider scopeProvider) =>
+        (this.inner as ISupportExternalScope)?.SetScopeProvider(new MaskingScopeProvider(scopeProvider));
+
+    private static object? Mask(object? state) =>
+        state is IReadOnlyList<KeyValuePair<string, object?>> values ? new MaskedScopeState(values) : state;
+
+    /// <summary>
+    /// Proveedor de scopes que entrega cada estado con los datos sensibles ocultos.
+    /// </summary>
+    private sealed class MaskingScopeProvider : IExternalScopeProvider
+    {
+        private readonly IExternalScopeProvider inner;
+
+        /// <summary>
+        /// Inicializa una nueva instancia de la clase <see cref="MaskingScopeProvider"/>.
+        /// </summary>
+        /// <param name="inner">Proveedor de scopes de Microsoft.Extensions.Logging.</param>
+        public MaskingScopeProvider(IExternalScopeProvider inner)
+        {
+            this.inner = inner;
+        }
+
+        /// <summary>
+        /// Recorre los scopes, cada uno ya oculto.
+        /// </summary>
+        /// <typeparam name="TState">Tipo del estado de la llamada.</typeparam>
+        /// <param name="callback">Función para cada scope.</param>
+        /// <param name="state">Estado de la llamada.</param>
+        public void ForEachScope<TState>(Action<object?, TState> callback, TState state) =>
+            this.inner.ForEachScope((scope, s) => callback(Mask(scope), s), state);
+
+        /// <summary>
+        /// Abre un scope.
+        /// </summary>
+        /// <param name="state">Estado del scope.</param>
+        /// <returns>El scope.</returns>
+        public IDisposable Push(object? state) => this.inner.Push(state);
+    }
+
+    /// <summary>
     /// Logger que pasa todo a Serilog salvo el estado de los scopes, que va con los datos sensibles ocultos.
     /// </summary>
     private sealed class SensitiveScopeLogger : ILogger
@@ -78,9 +122,7 @@ internal sealed class SensitiveScopeLoggerProvider : ILoggerProvider
         /// <returns>El scope.</returns>
         public IDisposable? BeginScope<TState>(TState state)
             where TState : notnull
-            => state is IReadOnlyList<KeyValuePair<string, object?>> values
-                ? this.inner.BeginScope(new MaskedScopeState(values))
-                : this.inner.BeginScope(state);
+            => this.inner.BeginScope(Mask(state) ?? state);
 
         /// <summary>
         /// Indica si el nivel está activo.
@@ -109,7 +151,7 @@ internal sealed class SensitiveScopeLoggerProvider : ILoggerProvider
     {
         private const string OriginalFormat = "{OriginalFormat}";
 
-        private static readonly Regex Hole = new Regex(@"(?<!\{)\{(?<name>[^{}:,]+)(?:,[^{}:]*)?(?::(?<format>[^{}]*))?\}(?!\})", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
+        private static readonly Regex Hole = new Regex(@"(?<!\{)\{(?<name>[^{}:,]+)(?:,(?<alignment>[^{}:]*))?(?::(?<format>[^{}]*))?\}(?!\})", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
 
         private readonly List<KeyValuePair<string, object?>> values;
 
@@ -121,13 +163,23 @@ internal sealed class SensitiveScopeLoggerProvider : ILoggerProvider
         /// <param name="original">Estado original.</param>
         public MaskedScopeState(IReadOnlyList<KeyValuePair<string, object?>> original)
         {
-            this.values = original
-                .Select(v => v.Key != OriginalFormat && SensitiveDataNames.IsSensitive(v.Key)
-                    ? new KeyValuePair<string, object?>(v.Key, SensitiveDataNames.Mask)
-                    : v)
-                .ToList();
+            var format = original.FirstOrDefault(v => v.Key == OriginalFormat).Value as string;
+            var afterKey = format is null ? new HashSet<int>() : HolesAfterSensitiveKey(format);
+            var position = 0;
 
-            var format = this.values.FirstOrDefault(v => v.Key == OriginalFormat).Value as string;
+            this.values = original
+                .Select(v =>
+                {
+                    if (v.Key == OriginalFormat)
+                    {
+                        return v;
+                    }
+
+                    var masked = SensitiveDataNames.IsSensitive(v.Key) || afterKey.Contains(position);
+                    position++;
+                    return masked ? new KeyValuePair<string, object?>(v.Key, SensitiveDataNames.Mask) : v;
+                })
+                .ToList();
 
             this.text = format is null ? original.ToString() ?? string.Empty : SensitiveDataMasker.MaskText(this.Render(format));
         }
@@ -159,7 +211,45 @@ internal sealed class SensitiveScopeLoggerProvider : ILoggerProvider
         /// <inheritdoc/>
         IEnumerator IEnumerable.GetEnumerator() => this.GetEnumerator();
 
-        // Como FormattedLogValues: los huecos se rellenan por orden con los valores.
+        // Huecos (por posición) que van detrás de una clave sensible: "pwd={Valor}".
+        private static HashSet<int> HolesAfterSensitiveKey(string format)
+        {
+            var result = new HashSet<int>();
+            var previous = 0;
+            var index = 0;
+
+            foreach (Match match in Hole.Matches(format))
+            {
+                if (SensitiveDataMasker.EndsWithSensitiveKey(format.Substring(previous, match.Index - previous)))
+                {
+                    result.Add(index);
+                }
+
+                previous = match.Index + match.Length;
+                index++;
+            }
+
+            return result;
+        }
+
+        // Como FormattedLogValues: huecos por orden, cultura invariante, alineación y listas unidas con ", ".
+        private static string Format(object? value, string? format)
+        {
+            switch (value)
+            {
+                case null:
+                    return "(null)";
+                case string text:
+                    return text;
+                case IFormattable formattable:
+                    return formattable.ToString(format, CultureInfo.InvariantCulture);
+                case IEnumerable items:
+                    return string.Join(", ", items.Cast<object?>().Select(i => Format(i, format)));
+                default:
+                    return value.ToString() ?? string.Empty;
+            }
+        }
+
         private string Render(string format)
         {
             var index = 0;
@@ -172,12 +262,14 @@ internal sealed class SensitiveScopeLoggerProvider : ILoggerProvider
                     return match.Value;
                 }
 
-                var value = holes[index++].Value;
-                var valueFormat = match.Groups["format"].Success ? match.Groups["format"].Value : null;
+                var value = Format(holes[index++].Value, match.Groups["format"].Success ? match.Groups["format"].Value : null);
 
-                return value is IFormattable formattable
-                    ? formattable.ToString(valueFormat, CultureInfo.CurrentCulture)
-                    : value?.ToString() ?? "(null)";
+                if (match.Groups["alignment"].Success && int.TryParse(match.Groups["alignment"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var alignment))
+                {
+                    value = alignment >= 0 ? value.PadLeft(alignment) : value.PadRight(-alignment);
+                }
+
+                return value;
             });
 
             return new StringBuilder(rendered).Replace("{{", "{").Replace("}}", "}").ToString();

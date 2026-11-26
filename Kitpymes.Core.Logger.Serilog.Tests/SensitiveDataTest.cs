@@ -151,12 +151,16 @@ namespace Kitpymes.Core.Logger.Serilog.Tests
             var r2 = SensitiveDataMasker.MaskText(base64);
             var r3 = SensitiveDataMasker.MaskText(new string('a', 100000));
             var r4 = SensitiveDataMasker.MaskText(string.Concat(Enumerable.Repeat("a b ", 20000)) + "password=S3CRET");
+            var r5 = SensitiveDataMasker.MaskText("pwd=x" + new string(' ', 160000) + "y");
+            var r6 = SensitiveDataMasker.MaskText(string.Concat(Enumerable.Repeat("<pwd>", 160000)));
 
             reloj.Stop();
             Assert.AreEqual(relleno, r1);
             Assert.AreEqual(base64, r2);
             Assert.AreEqual(100000, r3.Length);
             StringAssert.EndsWith(r4, "password=***");
+            Assert.AreEqual("pwd=***", r5);
+            Assert.AreEqual(160000 * 5, r6.Length);
             Assert.IsTrue(reloj.ElapsedMilliseconds < 1000, $"Tardó {reloj.ElapsedMilliseconds} ms.");
         }
 
