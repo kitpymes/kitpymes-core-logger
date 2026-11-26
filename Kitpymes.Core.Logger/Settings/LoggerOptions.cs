@@ -42,6 +42,7 @@ public class LoggerOptions
         LoggerSettings.SerilogSettings = settings;
 
         LoggerSettings.IsSerilogEnabled = true;
+        LoggerSettings.Enabled = true;
 
         return this;
     }

@@ -396,6 +396,20 @@ namespace Kitpymes.Core.Logger.Serilog.Tests
             Assert.AreEqual(1, services.Count(d => d.ServiceType == typeof(ILoggerService)));
         }
 
+        [TestMethod]
+        public void LoadSerilog_AlLiberarElContenedor_VaciaLosEventos()
+        {
+            var services = new ServiceCollection();
+            services.LoadSerilog(ConFichero());
+
+            using (var provider = services.BuildServiceProvider())
+            {
+                provider.GetRequiredService<ILoggerService>().CreateLogger("Contenedor").Error("al liberar");
+            }
+
+            Assert.AreEqual("al liberar", Mensaje(LeerEventos().Single()));
+        }
+
         private static LogEvent Evento() =>
             new(DateTimeOffset.Now, LogEventLevel.Information, null, MessageTemplate.Empty, Array.Empty<LogEventProperty>());
 

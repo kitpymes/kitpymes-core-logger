@@ -27,7 +27,7 @@ public class ProcessEnricher : ILogEventEnricher
     /// </summary>
     public const string ProcessPropertyName = "Process";
 
-    private LogEventProperty? lastValue;
+    private readonly LogEventProperty property = new(ProcessPropertyName, new ScalarValue(CurrentProcess()));
 
     /// <summary>
     /// Enriquecer el evento de registro.
@@ -35,28 +35,19 @@ public class ProcessEnricher : ILogEventEnricher
     /// <param name="logEvent">El evento de registro para enriquecer.</param>
     /// <param name="propertyFactory">Fábrica para crear nuevas propiedades para agregar al evento.</param>
     public void Enrich(LogEvent logEvent, ILogEventPropertyFactory propertyFactory)
+        => logEvent?.AddPropertyIfAbsent(this.property);
+
+    private static string CurrentProcess()
     {
-        var process = System.Diagnostics.Process.GetCurrentProcess();
+        using var process = System.Diagnostics.Process.GetCurrentProcess();
 
-        string processValue = string.Empty;
+        var processValue = process.Id > 0 ? process.Id.ToStringFormat() : string.Empty;
 
-        if (process?.Id > 0)
+        if (!string.IsNullOrWhiteSpace(process.ProcessName))
         {
-            processValue = process.Id.ToStringFormat();
+            processValue += process.Id > 0 ? $" - {process.ProcessName}" : process.ProcessName;
         }
 
-        if (!string.IsNullOrWhiteSpace(process?.ProcessName))
-        {
-            processValue += process?.Id > 0 ? $" - {process.ProcessName}" : process?.ProcessName;
-        }
-
-        var last = this.lastValue;
-
-        if (last is null || (last.Value is ScalarValue scalarValue && (string?)scalarValue.Value != processValue))
-        {
-            this.lastValue = last = new LogEventProperty(ProcessPropertyName, new ScalarValue(processValue));
-
-            logEvent?.AddPropertyIfAbsent(last);
-        }
+        return processValue;
     }
 }

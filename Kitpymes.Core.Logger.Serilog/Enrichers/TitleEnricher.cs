@@ -26,9 +26,7 @@ public class TitleEnricher : ILogEventEnricher
     /// </summary>
     public const string TitlePropertyName = "Title";
 
-    private readonly string? title;
-
-    private LogEventProperty? lastValue;
+    private readonly LogEventProperty property;
 
     /// <summary>
     /// Inicializa una nueva instancia de la clase <see cref="TitleEnricher"/>.
@@ -41,7 +39,7 @@ public class TitleEnricher : ILogEventEnricher
             title = System.Diagnostics.Process.GetCurrentProcess().ProcessName;
         }
 
-        this.title = title;
+        this.property = new LogEventProperty(TitlePropertyName, new ScalarValue(title));
     }
 
     /// <summary>
@@ -50,14 +48,5 @@ public class TitleEnricher : ILogEventEnricher
     /// <param name="logEvent">El evento de registro para enriquecer.</param>
     /// <param name="propertyFactory">Fábrica para crear nuevas propiedades para agregar al evento.</param>
     public void Enrich(LogEvent logEvent, ILogEventPropertyFactory propertyFactory)
-    {
-        var last = lastValue;
-
-        if (last is null || (last.Value is ScalarValue scalarValue && (string?)scalarValue.Value != title))
-        {
-            this.lastValue = last = new LogEventProperty(TitlePropertyName, new ScalarValue(this.title));
-
-            logEvent?.AddPropertyIfAbsent(last);
-        }
-    }
+        => logEvent?.AddPropertyIfAbsent(this.property);
 }

@@ -27,7 +27,7 @@ public class MachineNameEnricher : ILogEventEnricher
     /// </summary>
     public const string MachineNamePropertyName = "MachineName";
 
-    private LogEventProperty? lastValue;
+    private readonly LogEventProperty property = new(MachineNamePropertyName, new ScalarValue(Environment.MachineName));
 
     /// <summary>
     /// Enriquecer el evento de registro.
@@ -35,16 +35,5 @@ public class MachineNameEnricher : ILogEventEnricher
     /// <param name="logEvent">El evento de registro para enriquecer.</param>
     /// <param name="propertyFactory">Fábrica para crear nuevas propiedades para agregar al evento.</param>
     public void Enrich(LogEvent logEvent, ILogEventPropertyFactory propertyFactory)
-    {
-        var machineName = Environment.MachineName;
-
-        var last = this.lastValue;
-
-        if (last is null || (last.Value is ScalarValue scalarValue && (string?)scalarValue.Value != machineName))
-        {
-            this.lastValue = last = new LogEventProperty(MachineNamePropertyName, new ScalarValue(machineName));
-
-            logEvent?.AddPropertyIfAbsent(last);
-        }
-    }
+        => logEvent?.AddPropertyIfAbsent(this.property);
 }
